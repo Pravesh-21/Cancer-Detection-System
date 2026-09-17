@@ -1,0 +1,89 @@
+# ─────────────────────────────────────────────
+#  Diagnostic Radiography Suite — .gitignore
+# ─────────────────────────────────────────────
+
+# ── Project-specific large / sensitive folders ──
+models/
+datasets/
+scripts/
+checkpoints/
+weights/
+pretrained/
+exports/
+sample_images/
+test_images/
+uploads/
+
+# ── Python virtual environment ──
+venv/
+.venv/
+env/
+.env/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.so
+
+# ── Python tooling ──
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# ── Environment / secrets ──
+.env
+.env.local
+.env.*.local
+*.env
+
+# ── Next.js / Node ──
+node_modules/
+.next/
+out/
+.turbo/
+.vercel/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── IDE / OS artifacts ──
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Jupyter ──
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Compiled / binary ──
+*.pkl
+*.pt
+*.pth
+*.h5
+*.hdf5
+*.onnx
+*.tflite
+*.pb
+*.bin
+*.safetensors
+
+# ── Temporary / misc ──
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
