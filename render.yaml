@@ -7,9 +7,9 @@ services:
     name: diagnostic-radiography-api
     runtime: python
     region: oregon          # Change to: frankfurt | singapore | ohio as needed
-    plan: standard          # standard has 2GB RAM — needed for PyTorch + TF models
-                            # free tier (512MB) is NOT sufficient for this stack.
-    rootDir: backend        # Only the backend/ folder is deployed
+    plan: standard          # standard = 2GB RAM — needed for PyTorch + TF together
+                            # ⚠️ free tier (512MB) is NOT sufficient for this stack
+    rootDir: backend        # Only the backend/ folder is used
 
     buildCommand: pip install -r requirements.txt
 
@@ -22,28 +22,15 @@ services:
 
     healthCheckPath: /health
 
-    # ---------- Environment Variables ----------
-    # Set sensitive values in the Render Dashboard (not here).
-    # Only non-secret defaults are listed below.
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.0"
 
-      # Set SKIP_MODEL_DOWNLOAD=true when running locally with models already present
+      # Set to "true" when running locally with models already on disk.
+      # On Render, keep this as "false" so models download from Drive on boot.
       - key: SKIP_MODEL_DOWNLOAD
         value: "false"
 
-      # ── Google Drive File IDs for model weights ──
-      # Get these from each file's shareable link:
-      #   https://drive.google.com/file/d/<FILE_ID>/view
-      # Set these in the Render Dashboard → Environment section:
-      #
-      #   GDRIVE_PARENT_MODEL_ID   = <file id of router_model_final.keras>
-      #   GDRIVE_BRAIN_MODEL_ID    = <file id of Child_Brain best_child_model.pt>
-      #   GDRIVE_LUNG_MODEL_ID     = <file id of Child_Lung best_child_model.pt>
-      #   GDRIVE_BREAST_MODEL_ID   = <file id of Child_Breast best_child_model.pt>
-      #   GDRIVE_BONE_MODEL_ID     = <file id of Child_Bone best_child_model.pt>
-
-      # Extra CORS origins (comma-separated) beyond the defaults
+      # Extra CORS origins beyond Vercel + localhost (comma-separated, optional)
       - key: RENDER_ALLOWED_ORIGINS
         value: ""
