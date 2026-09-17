@@ -2,6 +2,7 @@ import io
 import time
 import uuid
 import os
+import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Optional, List
@@ -23,6 +24,7 @@ from model_loader import ModelEngine
 from download_models import download_models
 
 engine = ModelEngine()
+_models_ready = False
 
 TENANT_CONFIG = {
     "hospitalName": "Metropolitan Radiologic Health Network",
@@ -56,10 +58,18 @@ audit_logs: List[AuditLogEntry] = [
 ]
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def _sync_init():
+    global _models_ready
     download_models()
     engine.initialize()
+    _models_ready = True
+    print("==> All models loaded. Service is fully operational.")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _sync_init)
     yield
 
 
@@ -91,9 +101,9 @@ app.add_middleware(
 @app.get("/health")
 def health_check():
     return {
-        "status": "operational",
-        "models_initialized": engine.initialized,
-        "available_domains": list(engine.child_models.keys()),
+        "status": "operational" if _models_ready else "initializing",
+        "models_initialized": _models_ready,
+        "available_domains": list(engine.child_models.keys()) if _models_ready else [],
         "router_classes": getattr(engine, "parent_classes", []),
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "modelVersion": TENANT_CONFIG["modelVersion"],
@@ -105,7 +115,7 @@ def health_check():
 def get_tenant_config():
     return TenantConfigResponse(
         **TENANT_CONFIG,
-        availableDomains=list(engine.child_models.keys()),
+        availableDomains=list(engine.child_models.keys()) if _models_ready else [],
     )
 
 
@@ -125,6 +135,12 @@ async def diagnose_image(
     file: UploadFile = File(...),
     domain_override: Optional[str] = Form(None),
 ):
+    if not _models_ready:
+        raise HTTPException(
+            status_code=503,
+            detail="Models are still loading. Please wait a moment and try again."
+        )
+
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
 
