@@ -8,17 +8,14 @@ import type {
 import { DEFAULT_TENANT, type TenantBranding } from "@/config/tenant";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ||   // Set this in Vercel → Settings → Environment Variables
-  "http://127.0.0.1:8001";             // Local dev fallback
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://127.0.0.1:8001";
 
 export interface DiagnosisApiResponse {
   sessionResult: ClinicalSessionResult;
   dicomMetadata: DicomMetadata;
 }
 
-/**
- * Checks if the backend server is alive, measuring connection latency and retrieving runtime info.
- */
 export async function checkBackendHealth(): Promise<BackendHealthInfo> {
   const start = performance.now();
   try {
@@ -42,9 +39,6 @@ export async function checkBackendHealth(): Promise<BackendHealthInfo> {
   }
 }
 
-/**
- * Retrieves white-label tenant metadata, regulatory disclaimers, and version info.
- */
 export async function fetchTenantConfig(): Promise<TenantBranding> {
   try {
     const res = await fetch(`${API_BASE_URL}/api/config`, {
@@ -62,9 +56,6 @@ export async function fetchTenantConfig(): Promise<TenantBranding> {
   }
 }
 
-/**
- * Retrieves chronologically ordered compliance audit logs.
- */
 export async function fetchAuditLogs(): Promise<AuditLogEntry[]> {
   try {
     const res = await fetch(`${API_BASE_URL}/api/audit-logs`, {
@@ -78,9 +69,6 @@ export async function fetchAuditLogs(): Promise<AuditLogEntry[]> {
   }
 }
 
-/**
- * Records an audit event on the backend audit trail.
- */
 export async function recordClientAuditLog(entry: Omit<AuditLogEntry, "id" | "timestamp">): Promise<void> {
   try {
     const fullEntry: AuditLogEntry = {
@@ -98,9 +86,6 @@ export async function recordClientAuditLog(entry: Omit<AuditLogEntry, "id" | "ti
   }
 }
 
-/**
- * Sends a radiologic scan to the dual-stage model pipeline.
- */
 export async function runApiDiagnosis(
   imageSource: File | Blob | string,
   fileName: string = "scan.jpg",

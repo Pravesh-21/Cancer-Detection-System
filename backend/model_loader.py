@@ -14,7 +14,6 @@ import tensorflow as tf
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
 
-# Device selection for PyTorch child models
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 DOMAIN_LABELS = {
@@ -74,10 +73,7 @@ class ModelEngine:
         print(f" PyTorch Hardware Target : {DEVICE}")
         print("=" * 60)
 
-        # ── 1. Load Parent Router Model (Keras / TensorFlow) ──
         self._load_parent_router()
-
-        # ── 2. Load Specialized Child Networks (PyTorch) ──
         self._load_child_models()
 
         self.child_transform = transforms.Compose([
@@ -115,7 +111,7 @@ class ModelEngine:
 
     def _load_child_models(self):
         self.child_models: Dict[str, Tuple[nn.Module, List[str]]] = {}
-        
+
         child_folders = {
             "brain": MODELS_DIR / "Child_Brain_Cancer_Processed",
             "lung": MODELS_DIR / "Child_Lung_Cancer_Processed",
@@ -148,10 +144,8 @@ class ModelEngine:
             print(f"Loaded Child Network: {domain.upper()} ({len(classes)} classes: {classes})")
 
     def predict_domain(self, image_pil: Image.Image) -> Tuple[str, float, float, List[Dict[str, Any]]]:
-        """Runs parent router model on input PIL image."""
         start_time = time.perf_counter()
 
-        # Convert to RGB and resize to (224, 224)
         img = image_pil.convert("RGB").resize((224, 224))
         img_arr = np.array(img, dtype=np.float32)
         img_tensor = np.expand_dims(img_arr, axis=0)
@@ -159,7 +153,6 @@ class ModelEngine:
         raw_preds = self.parent_model.predict(img_tensor, verbose=0)[0]
         latency_ms = (time.perf_counter() - start_time) * 1000
 
-        # Build probabilities list
         prob_dict = []
         for class_idx, class_name in enumerate(self.parent_classes):
             prob = float(raw_preds[class_idx])
@@ -169,7 +162,6 @@ class ModelEngine:
                 "label": DOMAIN_LABELS.get(class_name, class_name.capitalize()),
             })
 
-        # Sort by highest probability
         prob_dict.sort(key=lambda x: x["probability"], reverse=True)
         top_domain = prob_dict[0]["domain"]
         top_confidence = prob_dict[0]["probability"]
@@ -177,12 +169,9 @@ class ModelEngine:
         return top_domain, top_confidence, round(latency_ms, 1), prob_dict
 
     def predict_child(self, domain: str, image_pil: Image.Image) -> Tuple[str, str, str, float, float, List[Dict[str, Any]]]:
-        """Runs child model for the routed domain."""
         start_time = time.perf_counter()
 
         if domain not in self.child_models:
-            # Fallback for skin or unregistered domain
-            classes = ["mel", "nv", "bcc"]
             dummy_probs = [
                 {"className": "mel", "displayName": "Melanoma", "probability": 0.8841, "riskLevel": "high"},
                 {"className": "nv", "displayName": "Benign Nevus", "probability": 0.0820, "riskLevel": "normal"},

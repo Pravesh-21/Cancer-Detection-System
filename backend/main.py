@@ -1,6 +1,7 @@
 import io
 import time
 import uuid
+import os
 from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Optional, List
@@ -23,7 +24,6 @@ from download_models import download_models
 
 engine = ModelEngine()
 
-# Centralized Multi-Tenant Configuration
 TENANT_CONFIG = {
     "hospitalName": "Metropolitan Radiologic Health Network",
     "departmentName": "Department of Clinical Informatics & Diagnostic Imaging",
@@ -36,7 +36,6 @@ TENANT_CONFIG = {
     "anonymizationProtocol": "HIPAA Safe Harbor De-identification (45 CFR § 164.514(b)(2))",
 }
 
-# Live Clinical Audit Trail
 audit_logs: List[AuditLogEntry] = [
     AuditLogEntry(
         id=f"EVT-{uuid.uuid4().hex[:6].upper()}",
@@ -59,9 +58,7 @@ audit_logs: List[AuditLogEntry] = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Step 1: Fetch model weights from Google Drive (no-op if already cached)
     download_models()
-    # Step 2: Initialize all models on server startup
     engine.initialize()
     yield
 
@@ -73,20 +70,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-import os as _os
-
-# CORS: production Vercel frontend + localhost dev.
-# Add more via RENDER_ALLOWED_ORIGINS env var (comma-separated).
 _default_origins = [
     "https://cancer-detection-system-two.vercel.app",
     "http://localhost:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3000",
 ]
-_extra = _os.environ.get("RENDER_ALLOWED_ORIGINS", "")
+_extra = os.environ.get("RENDER_ALLOWED_ORIGINS", "")
 _allowed_origins = _default_origins + [o.strip() for o in _extra.split(",") if o.strip()]
 
-# Enable CORS for Next.js frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
@@ -111,7 +103,6 @@ def health_check():
 
 @app.get("/api/config", response_model=TenantConfigResponse)
 def get_tenant_config():
-    """Returns dynamic tenant branding, regulatory metadata, and supported domains."""
     return TenantConfigResponse(
         **TENANT_CONFIG,
         availableDomains=list(engine.child_models.keys()),
@@ -120,13 +111,11 @@ def get_tenant_config():
 
 @app.get("/api/audit-logs", response_model=List[AuditLogEntry])
 def get_audit_logs():
-    """Returns chronologically ordered audit logs for regulatory compliance."""
     return audit_logs
 
 
 @app.post("/api/audit-logs", response_model=AuditLogEntry)
 def record_audit_log(entry: AuditLogEntry):
-    """Allows authenticated clients to record clinical workflow audit events."""
     audit_logs.insert(0, entry)
     return entry
 
@@ -147,18 +136,15 @@ async def diagnose_image(
 
     pipeline_start = time.perf_counter()
 
-    # ── Stage 1 & 2: Automated Domain Classification ──
     try:
         predicted_domain, domain_conf, router_latency, domain_probs = engine.predict_domain(image)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Domain routing error: {str(e)}")
 
-    # Check for manual domain override
     target_domain = predicted_domain
     if domain_override and domain_override.lower() in ["brain", "lung", "breast", "bone", "skin"]:
         target_domain = domain_override.lower()
 
-    # ── Stage 3: Specialized Pathology Analysis ──
     try:
         top_class, display_name, risk_level, child_conf, child_latency, class_probs = engine.predict_child(
             target_domain, image
@@ -170,7 +156,6 @@ async def diagnose_image(
     session_id = f"CLIN-{datetime.utcnow().strftime('%y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
     timestamp_iso = datetime.utcnow().isoformat() + "Z"
 
-    # Modality & anatomical mapping
     modality_map = {"brain": "MR", "lung": "CT", "breast": "MG", "bone": "DX", "skin": "US"}
     body_part_map = {
         "brain": "BRAIN / CRANIAL",
@@ -220,7 +205,6 @@ async def diagnose_image(
         timestamp=timestamp_iso,
     )
 
-    # Record Audit Event
     audit_logs.insert(
         0,
         AuditLogEntry(
