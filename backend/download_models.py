@@ -1,12 +1,10 @@
 """
 download_models.py — Render startup model fetcher.
 
-Downloads model weights from Google Drive folders using gdown.
-Folder IDs are hardcoded from the project's shared Drive folder.
-Each model subfolder is downloaded in full to models/<FolderName>/.
+Downloads individual model weight files from Google Drive using gdown.
+File IDs are hardcoded from the project's shared Drive folder.
 
-Set SKIP_MODEL_DOWNLOAD=true (env var) to skip this step when running locally
-with models already present on disk.
+Set SKIP_MODEL_DOWNLOAD=true to skip (e.g. running locally with models on disk).
 """
 
 import os
@@ -23,54 +21,73 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
 
-# ── Google Drive folder IDs ─────────────────────────────────────────────────
-# Each entry maps a local destination folder to its Google Drive folder ID.
-# Source: https://drive.google.com/drive/folders/1vTPy30K5evfC3MsJe6DrEdWri3uBBKCB
-GDRIVE_FOLDERS = {
-    "Parent_Model":                 "1o0n-lPvp-2G_FRzZcUJPB16R00I_j4VR",
-    "Child_Brain_Cancer_Processed": "1rDXC6hE_bUqlujQQxi-XXiPNxvJg8prK",
-    "Child_Lung_Cancer_Processed":  "1Di4DjG6nbZBOHYtIHG-4b4s714GB-Mni",
-    "Child_Breast_Cancer_Processed":"1jAvj769D3I2kiN1IToQDau23zASoIWNf",
-    "Child_Bone_Cancer_Processed":  "1KFLeukD_2WkA7cDJvV75qi_MnSk7ZWe8",
-}
+# ── Individual file IDs from Google Drive ───────────────────────────────────
+# Source folder: https://drive.google.com/drive/folders/1vTPy30K5evfC3MsJe6DrEdWri3uBBKCB
+MODEL_FILES = [
+    {
+        "description": "Parent Router — router_model_final.keras (primary)",
+        "file_id": "1GYWKIndDawSWGZyc_chPtnmybgyFIQAh",
+        "dest": MODELS_DIR / "Parent_Model" / "router_model_final.keras",
+    },
+    {
+        "description": "Parent Router — best_finetuned.keras (fallback 1)",
+        "file_id": "1BFeCZDIdDLML0ulW-aL_OdTZ64Cv367G",
+        "dest": MODELS_DIR / "Parent_Model" / "best_finetuned.keras",
+    },
+    {
+        "description": "Parent Router — best_head.keras (fallback 2)",
+        "file_id": "138rLs1BaayyUD4-qyYkuUwbAo_RXnZ2m",
+        "dest": MODELS_DIR / "Parent_Model" / "best_head.keras",
+    },
+    {
+        "description": "Child — Brain Pathology Classifier",
+        "file_id": "1NsS8IZrdB8BguUDyjXxC3AqbpYriD00w",
+        "dest": MODELS_DIR / "Child_Brain_Cancer_Processed" / "best_child_model.pt",
+    },
+    {
+        "description": "Child — Lung Pathology Classifier",
+        "file_id": "1Ch5gr1JaUfByNQTf3DxpDZ1JFh3aR9sB",
+        "dest": MODELS_DIR / "Child_Lung_Cancer_Processed" / "best_child_model.pt",
+    },
+    {
+        "description": "Child — Breast Pathology Classifier",
+        "file_id": "1evvS_RvzZZWiVnfAyInwsOQLILKcFZlF",
+        "dest": MODELS_DIR / "Child_Breast_Cancer_Processed" / "best_child_model.pt",
+    },
+    {
+        "description": "Child — Bone Pathology Classifier",
+        "file_id": "1bgXwHAQgSQlzUJtwe_6OlpbYkzxqnbk0",
+        "dest": MODELS_DIR / "Child_Bone_Cancer_Processed" / "best_child_model.pt",
+    },
+]
 
-# ── Embedded class names (no download needed) ───────────────────────────────
+# ── Embedded class names ─────────────────────────────────────────────────────
 CLASS_NAMES = {
-    "Parent_Model":                  ["brain", "lung", "breast", "bone", "skin"],
-    "Child_Brain_Cancer_Processed":  ["glioma", "meningioma", "notumor", "pituitary"],
-    "Child_Lung_Cancer_Processed":   ["lung_aca", "lung_n", "lung_scc"],
-    "Child_Breast_Cancer_Processed": ["benign", "malignant"],
-    "Child_Bone_Cancer_Processed":   ["cancer", "normal"],
+    MODELS_DIR / "Parent_Model" / "class_names.json":
+        ["brain", "lung", "breast", "bone", "skin"],
+    MODELS_DIR / "Child_Brain_Cancer_Processed" / "class_names.json":
+        ["glioma", "meningioma", "notumor", "pituitary"],
+    MODELS_DIR / "Child_Lung_Cancer_Processed" / "class_names.json":
+        ["lung_aca", "lung_n", "lung_scc"],
+    MODELS_DIR / "Child_Breast_Cancer_Processed" / "class_names.json":
+        ["benign", "malignant"],
+    MODELS_DIR / "Child_Bone_Cancer_Processed" / "class_names.json":
+        ["cancer", "normal"],
 }
 
 
 def ensure_class_names():
     """Write class_names.json into every model folder if not already present."""
-    for folder_name, classes in CLASS_NAMES.items():
-        dest = MODELS_DIR / folder_name / "class_names.json"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if not dest.exists():
-            with open(dest, "w") as f:
+    for path, classes in CLASS_NAMES.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            with open(path, "w") as f:
                 json.dump(classes, f)
-            print(f"[download_models] Wrote class_names.json → {folder_name}")
-
-
-def folder_needs_download(folder_name: str) -> bool:
-    """Return True if the key model weight file is missing."""
-    folder = MODELS_DIR / folder_name
-    if folder_name == "Parent_Model":
-        candidates = [
-            folder / "router_model_final.keras",
-            folder / "best_finetuned.keras",
-            folder / "best_head.keras",
-        ]
-        return not any(f.exists() for f in candidates)
-    else:
-        return not (folder / "best_child_model.pt").exists()
+            print(f"[download_models] Wrote class_names.json → {path.parent.name}")
 
 
 def download_models():
-    """Download all missing model folders from Google Drive."""
+    """Download all missing model weight files from Google Drive."""
 
     if os.environ.get("SKIP_MODEL_DOWNLOAD", "").lower() == "true":
         print("[download_models] SKIP_MODEL_DOWNLOAD=true — using local models.")
@@ -86,30 +103,39 @@ def download_models():
     print(" MODEL WEIGHT DOWNLOAD PHASE (Google Drive)")
     print("=" * 60)
 
-    for folder_name, folder_id in GDRIVE_FOLDERS.items():
-        dest = MODELS_DIR / folder_name
-        dest.mkdir(parents=True, exist_ok=True)
+    all_ok = True
+    for spec in MODEL_FILES:
+        dest: Path = spec["dest"]
+        file_id: str = spec["file_id"]
+        description: str = spec["description"]
 
-        if not folder_needs_download(folder_name):
-            print(f"  ✓ {folder_name} — already cached, skipping.")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        if dest.exists():
+            size_mb = dest.stat().st_size / (1024 * 1024)
+            print(f"  ✓ {description} — already cached ({size_mb:.1f} MB)")
             continue
 
-        print(f"  ↓ Downloading {folder_name} from Drive ...")
-        url = f"https://drive.google.com/drive/folders/{folder_id}"
+        url = f"https://drive.google.com/uc?id={file_id}"
+        print(f"  ↓ Downloading: {description} ...")
         try:
-            gdown.download_folder(
-                url=url,
-                output=str(dest),
-                quiet=False,
-                use_cookies=False,
-                remaining_ok=True,
-            )
-            print(f"  ✓ {folder_name} — download complete.")
+            gdown.download(url, str(dest), quiet=False, fuzzy=True)
+            if dest.exists():
+                size_mb = dest.stat().st_size / (1024 * 1024)
+                print(f"  ✓ {description} — done ({size_mb:.1f} MB)")
+            else:
+                print(f"  ✗ {description} — file not found after download!")
+                all_ok = False
         except Exception as e:
-            print(f"  ✗ {folder_name} — download FAILED: {e}")
+            print(f"  ✗ {description} — FAILED: {e}")
+            all_ok = False
 
     ensure_class_names()
-    print("\n ALL MODELS READY FOR INFERENCE\n")
+
+    if all_ok:
+        print("\n ALL MODELS READY FOR INFERENCE\n")
+    else:
+        print("\n WARNING: Some models failed to download. Check Drive permissions.\n")
 
 
 if __name__ == "__main__":
