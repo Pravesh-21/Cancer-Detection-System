@@ -1,0 +1,49 @@
+# render.yaml — Render.com infrastructure-as-code
+# Deploy the FastAPI backend as a Web Service on Render.
+# Docs: https://render.com/docs/render-yaml-spec
+
+services:
+  - type: web
+    name: diagnostic-radiography-api
+    runtime: python
+    region: oregon          # Change to: frankfurt | singapore | ohio as needed
+    plan: standard          # standard has 2GB RAM — needed for PyTorch + TF models
+                            # free tier (512MB) is NOT sufficient for this stack.
+    rootDir: backend        # Only the backend/ folder is deployed
+
+    buildCommand: pip install -r requirements.txt
+
+    startCommand: >
+      uvicorn main:app
+      --host 0.0.0.0
+      --port $PORT
+      --workers 1
+      --timeout-keep-alive 120
+
+    healthCheckPath: /health
+
+    # ---------- Environment Variables ----------
+    # Set sensitive values in the Render Dashboard (not here).
+    # Only non-secret defaults are listed below.
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+
+      # Set SKIP_MODEL_DOWNLOAD=true when running locally with models already present
+      - key: SKIP_MODEL_DOWNLOAD
+        value: "false"
+
+      # ── Google Drive File IDs for model weights ──
+      # Get these from each file's shareable link:
+      #   https://drive.google.com/file/d/<FILE_ID>/view
+      # Set these in the Render Dashboard → Environment section:
+      #
+      #   GDRIVE_PARENT_MODEL_ID   = <file id of router_model_final.keras>
+      #   GDRIVE_BRAIN_MODEL_ID    = <file id of Child_Brain best_child_model.pt>
+      #   GDRIVE_LUNG_MODEL_ID     = <file id of Child_Lung best_child_model.pt>
+      #   GDRIVE_BREAST_MODEL_ID   = <file id of Child_Breast best_child_model.pt>
+      #   GDRIVE_BONE_MODEL_ID     = <file id of Child_Bone best_child_model.pt>
+
+      # Extra CORS origins (comma-separated) beyond the defaults
+      - key: RENDER_ALLOWED_ORIGINS
+        value: ""

@@ -7,7 +7,9 @@ import type {
 } from "./types";
 import { DEFAULT_TENANT, type TenantBranding } from "@/config/tenant";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ||   // Set this in Vercel → Settings → Environment Variables
+  "http://127.0.0.1:8001";             // Local dev fallback
 
 export interface DiagnosisApiResponse {
   sessionResult: ClinicalSessionResult;

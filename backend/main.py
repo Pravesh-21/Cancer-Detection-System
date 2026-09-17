@@ -19,6 +19,7 @@ from schemas import (
     TenantConfigResponse,
 )
 from model_loader import ModelEngine
+from download_models import download_models
 
 engine = ModelEngine()
 
@@ -58,7 +59,9 @@ audit_logs: List[AuditLogEntry] = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize all models on server startup
+    # Step 1: Fetch model weights from Google Drive (no-op if already cached)
+    download_models()
+    # Step 2: Initialize all models on server startup
     engine.initialize()
     yield
 
@@ -70,10 +73,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+import os as _os
+
+# CORS: production Vercel frontend + localhost dev.
+# Add more via RENDER_ALLOWED_ORIGINS env var (comma-separated).
+_default_origins = [
+    "https://cancer-detection-system-two.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+]
+_extra = _os.environ.get("RENDER_ALLOWED_ORIGINS", "")
+_allowed_origins = _default_origins + [o.strip() for o in _extra.split(",") if o.strip()]
+
 # Enable CORS for Next.js frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
