@@ -482,6 +482,7 @@ export default function DicomViewer({
 
       {/* Accessible File Input */}
       <input
+        id="patient-scan-file-input"
         ref={fileInputRef}
         type="file"
         accept={ACCEPT_FILE_ATTR}

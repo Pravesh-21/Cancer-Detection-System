@@ -21,6 +21,7 @@ import {
 import type { DiagnosticResult, InferenceStatus, DiagnosticState } from "@/lib/types";
 import { STRINGS } from "@/config/strings";
 import { getSeverityToken } from "@/config/themeTokens";
+import { getRiskTierConfig, classifyClinicalRisk } from "@/utils/riskRegistry";
 
 interface ChildDiagnosticCardProps {
   status: InferenceStatus;
@@ -39,7 +40,9 @@ export default function ChildDiagnosticCard({
   const isError = status === "error";
   const isComplete = status === "complete" && !!childResult;
 
-  // Compute explicit diagnostic state
+  const calculatedRiskTier = childResult ? classifyClinicalRisk(childResult.predictedClass) : "normal";
+  const riskConfig = childResult ? getRiskTierConfig(childResult.predictedClass) : null;
+
   let diagnosticState: DiagnosticState = "empty";
   if (isLoading) {
     diagnosticState = "loading";
@@ -48,14 +51,14 @@ export default function ChildDiagnosticCard({
   } else if (isComplete) {
     if (childResult.confidence < 0.55) {
       diagnosticState = "low-confidence";
-    } else if (childResult.riskLevel === "high") {
+    } else if (calculatedRiskTier === "high") {
       diagnosticState = "high-confidence-malignant";
     } else {
       diagnosticState = "high-confidence-benign";
     }
   }
 
-  const severityToken = childResult ? getSeverityToken(childResult.riskLevel) : null;
+  const severityToken = childResult ? getSeverityToken(calculatedRiskTier) : null;
 
   return (
     <div
@@ -63,7 +66,6 @@ export default function ChildDiagnosticCard({
       role="region"
       aria-label={STRINGS.diagnostic.title}
     >
-      {/* ── Stage 3 Header ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="w-6 h-6 rounded-full bg-clinical-100 text-clinical-700 font-bold text-[12px] flex items-center justify-center">
@@ -79,25 +81,25 @@ export default function ChildDiagnosticCard({
           </div>
         </div>
 
-        {/* Colorblind-Safe Severity Badge (Color + Shape + Pattern + Icon) */}
-        {isComplete && severityToken && (
+        {isComplete && riskConfig && (
           <span
             className={cn(
               "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold shadow-2xs transition-all",
-              severityToken.badgeClass
+              riskConfig.badgeClass,
+              riskConfig.pulseClass
             )}
-            aria-label={severityToken.ariaLabel}
+            aria-label={`${riskConfig.label}: ${riskConfig.sublabel}`}
           >
-            {childResult.riskLevel === "high" && (
+            {riskConfig.tier === "high" && (
               <AlertTriangle className="w-3.5 h-3.5 text-rose-600" aria-hidden="true" />
             )}
-            {childResult.riskLevel === "moderate" && (
+            {riskConfig.tier === "moderate" && (
               <AlertCircle className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />
             )}
-            {(childResult.riskLevel === "low" || childResult.riskLevel === "normal") && (
+            {riskConfig.tier === "normal" && (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
             )}
-            <span>{severityToken.label}</span>
+            <span>{riskConfig.label}</span>
           </span>
         )}
       </div>

@@ -11,6 +11,7 @@ import DicomMetadataTab from "@/components/tabs/DicomMetadataTab";
 import SendToPhysicianModal from "@/components/modals/SendToPhysicianModal";
 import PatientReportModal from "@/components/modals/PatientReportModal";
 import AuditLogsModal from "@/components/modals/AuditLogsModal";
+import Organ3DViewer from "@/components/spatial/Organ3DViewer";
 
 import {
   runApiDiagnosis,
@@ -39,20 +40,18 @@ import { ArrowRight, ShieldAlert } from "lucide-react";
 export default function DiagnosticWorkspacePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Multi-Tenant Branding & Health State ──
   const [tenant, setTenant] = useState<TenantBranding>(DEFAULT_TENANT);
   const [healthInfo, setHealthInfo] = useState<BackendHealthInfo>({ online: true });
 
-  // ── Workspace State (Only User Input — No Hardcoded Sample Presets) ──
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [uploadedFileSize, setUploadedFileSize] = useState<number | null>(null);
 
-  // ── Inference Result State ──
   const [inferenceStatus, setInferenceStatus] = useState<InferenceStatus>("idle");
   const [result, setResult] = useState<ClinicalSessionResult | null>(null);
   const [dicom, setDicom] = useState<DicomMetadata | null>(null);
+  const [overrideDomain, setOverrideDomain] = useState<Domain | null>(null);
 
   // ── Viewport Control State & Heatmap Overlay ──
   const [viewport, setViewport] = useState<ViewportSettings>(DEFAULT_VIEWPORT_SETTINGS);
@@ -114,11 +113,30 @@ export default function DiagnosticWorkspacePage() {
       const prelimDicom = createPreliminaryDicomMetadata(file, tenant);
       setDicom(prelimDicom);
       setViewport(DEFAULT_VIEWPORT_SETTINGS);
+      setOverrideDomain(null);
 
       addAuditEvent("SCAN_INGESTED", `File ${file.name} (${(file.size / 1024).toFixed(1)} KB) ingested into workspace.`);
     },
     [tenant, addAuditEvent]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const sampleParam = urlParams.get("sample");
+    if (sampleParam && !uploadedFile) {
+      fetch(`/samples/${sampleParam}`)
+        .then((res) => {
+          if (!res.ok) throw new Error("Sample not found");
+          return res.blob();
+        })
+        .then((blob) => {
+          const sampleFile = new File([blob], sampleParam, { type: blob.type || "image/jpeg" });
+          handleFileUpload(sampleFile);
+        })
+        .catch((err) => console.warn("Failed to load sample:", err));
+    }
+  }, [handleFileUpload, uploadedFile]);
 
   // ── Clear Loaded Image ──
   const handleClearImage = useCallback(() => {
@@ -129,6 +147,7 @@ export default function DiagnosticWorkspacePage() {
     setInferenceStatus("idle");
     setResult(null);
     setDicom(null);
+    setOverrideDomain(null);
     setIsHeatmapActive(false);
     addAuditEvent("SCAN_PURGED", "Patient radiograph unloaded from viewport.");
   }, [addAuditEvent]);
@@ -159,6 +178,7 @@ export default function DiagnosticWorkspacePage() {
   // ── Interactive Domain Override ──
   const handleDomainOverride = useCallback(
     async (domain: Domain) => {
+      setOverrideDomain(domain);
       if (!uploadedFile) return;
 
       setInferenceStatus("loading");
@@ -180,6 +200,11 @@ export default function DiagnosticWorkspacePage() {
     },
     [uploadedFile, addAuditEvent]
   );
+
+  const activeDomain: Domain | null =
+    overrideDomain ||
+    result?.domainClassification.predictedDomain ||
+    null;
 
   // ── Export JSON Findings ──
   const handleExportMetrics = useCallback(() => {
@@ -220,7 +245,7 @@ export default function DiagnosticWorkspacePage() {
       />
 
       {/* ── Main Workspace ── */}
-      <main className="flex-1 max-w-[1680px] w-full mx-auto p-4 md:p-6 space-y-6">
+      <main className="flex-1 max-w-[1780px] w-full mx-auto p-4 md:p-6 space-y-6">
         {/* ── Declarative Workflow Progression Banner ── */}
         <div
           className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-4 py-2.5 rounded-lg bg-white border border-slate-200 shadow-2xs gap-3"
@@ -271,10 +296,10 @@ export default function DiagnosticWorkspacePage() {
           </div>
         </div>
 
-        {/* ── 3-Column Core Grid ── */}
+        {/* ── 3-Column Core Viewport Grid (DICOM | Dual-Stage AI | 3D Spatial Informatics) ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          {/* Column 1: Image Upload & Viewport (4 cols) */}
-          <section className="lg:col-span-4">
+          {/* Column 1: Image Upload & DICOM Radiography Viewport (4 cols) */}
+          <section className="lg:col-span-4 space-y-4">
             <DicomViewer
               previewUrl={previewUrl}
               uploadedFileName={uploadedFileName}
@@ -291,17 +316,14 @@ export default function DiagnosticWorkspacePage() {
             />
           </section>
 
-          {/* Column 2: Automated Domain Classification (4 cols) */}
-          <section className="lg:col-span-4">
+          {/* Column 2: Parent Routing & Specialized Child Output (4 cols) */}
+          <section className="lg:col-span-4 space-y-4">
             <ParentRouterCard
               status={inferenceStatus}
               routerResult={result ? result.domainClassification : null}
               onSelectDomainOverride={handleDomainOverride}
             />
-          </section>
 
-          {/* Column 3: Diagnostic Output & Actions (4 cols) */}
-          <section className="lg:col-span-4 space-y-4">
             <ChildDiagnosticCard
               status={inferenceStatus}
               childResult={result ? result.diagnosticFinding : null}
@@ -315,6 +337,18 @@ export default function DiagnosticWorkspacePage() {
               onOpenReportModal={() => setIsReportModalOpen(true)}
               onOpenSendModal={() => setIsSendModalOpen(true)}
               onExportMetrics={handleExportMetrics}
+            />
+          </section>
+
+          {/* Column 3: Interactive 3D Spatial Organ Informatics Viewer (4 cols) */}
+          <section className="lg:col-span-4 space-y-4">
+            <Organ3DViewer
+              domain={activeDomain}
+              predictedClass={result?.diagnosticFinding.predictedClass}
+              displayName={result?.diagnosticFinding.displayName}
+              confidence={result?.diagnosticFinding.confidence}
+              isLoading={inferenceStatus === "loading"}
+              hasResults={inferenceStatus === "complete" && !!result}
             />
           </section>
         </div>
