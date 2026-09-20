@@ -11,7 +11,7 @@ import DicomMetadataTab from "@/components/tabs/DicomMetadataTab";
 import SendToPhysicianModal from "@/components/modals/SendToPhysicianModal";
 import PatientReportModal from "@/components/modals/PatientReportModal";
 import AuditLogsModal from "@/components/modals/AuditLogsModal";
-import Organ3DViewer from "@/components/spatial/Organ3DViewer";
+// import Organ3DViewer from "@/components/spatial/Organ3DViewer";
 
 import {
   runApiDiagnosis,
@@ -296,10 +296,10 @@ export default function DiagnosticWorkspacePage() {
           </div>
         </div>
 
-        {/* ── 3-Column Core Viewport Grid (DICOM | Dual-Stage AI | 3D Spatial Informatics) ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          {/* Column 1: Image Upload & DICOM Radiography Viewport (4 cols) */}
-          <section className="lg:col-span-4 space-y-4">
+        {/* ── 2-Column Core Viewport Grid (DICOM Viewport | Dual-Stage AI Diagnostic Cards) ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          {/* Column 1: Image Upload & DICOM Radiography Viewport */}
+          <section className="space-y-4">
             <DicomViewer
               previewUrl={previewUrl}
               uploadedFileName={uploadedFileName}
@@ -316,8 +316,8 @@ export default function DiagnosticWorkspacePage() {
             />
           </section>
 
-          {/* Column 2: Parent Routing & Specialized Child Output (4 cols) */}
-          <section className="lg:col-span-4 space-y-4">
+          {/* Column 2: Parent Routing & Specialized Child Output */}
+          <section className="space-y-4">
             <ParentRouterCard
               status={inferenceStatus}
               routerResult={result ? result.domainClassification : null}
@@ -337,18 +337,6 @@ export default function DiagnosticWorkspacePage() {
               onOpenReportModal={() => setIsReportModalOpen(true)}
               onOpenSendModal={() => setIsSendModalOpen(true)}
               onExportMetrics={handleExportMetrics}
-            />
-          </section>
-
-          {/* Column 3: Interactive 3D Spatial Organ Informatics Viewer (4 cols) */}
-          <section className="lg:col-span-4 space-y-4">
-            <Organ3DViewer
-              domain={activeDomain}
-              predictedClass={result?.diagnosticFinding.predictedClass}
-              displayName={result?.diagnosticFinding.displayName}
-              confidence={result?.diagnosticFinding.confidence}
-              isLoading={inferenceStatus === "loading"}
-              hasResults={inferenceStatus === "complete" && !!result}
             />
           </section>
         </div>

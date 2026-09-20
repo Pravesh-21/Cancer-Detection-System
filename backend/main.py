@@ -84,7 +84,10 @@ _default_origins = [
     "https://cancer-detection-system-two.vercel.app",
     "http://localhost:3000",
     "http://localhost:3001",
+    "http://localhost:3002",
     "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002",
 ]
 _extra = os.environ.get("RENDER_ALLOWED_ORIGINS", "")
 _allowed_origins = _default_origins + [o.strip() for o in _extra.split(",") if o.strip()]

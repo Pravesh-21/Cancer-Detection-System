@@ -1,3 +1,12 @@
+"""
+download_models.py — Render startup model fetcher.
+
+Downloads individual model weight files from Google Drive using gdown.
+File IDs are hardcoded from the project's shared Drive folder.
+
+Set SKIP_MODEL_DOWNLOAD=true to skip (e.g. running locally with models on disk).
+"""
+
 import os
 import json
 from pathlib import Path
@@ -12,19 +21,20 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
 
+
 MODEL_FILES = [
     {
-        "description": "Parent Router — router_model_final.keras",
+        "description": "Parent Router — router_model_final.keras (primary)",
         "file_id": "1GYWKIndDawSWGZyc_chPtnmybgyFIQAh",
         "dest": MODELS_DIR / "Parent_Model" / "router_model_final.keras",
     },
     {
-        "description": "Parent Router — best_finetuned.keras",
+        "description": "Parent Router — best_finetuned.keras (fallback 1)",
         "file_id": "1BFeCZDIdDLML0ulW-aL_OdTZ64Cv367G",
         "dest": MODELS_DIR / "Parent_Model" / "best_finetuned.keras",
     },
     {
-        "description": "Parent Router — best_head.keras",
+        "description": "Parent Router — best_head.keras (fallback 2)",
         "file_id": "138rLs1BaayyUD4-qyYkuUwbAo_RXnZ2m",
         "dest": MODELS_DIR / "Parent_Model" / "best_head.keras",
     },
@@ -50,6 +60,7 @@ MODEL_FILES = [
     },
 ]
 
+# ── Embedded class names ─────────────────────────────────────────────────────
 CLASS_NAMES = {
     MODELS_DIR / "Parent_Model" / "class_names.json":
         ["brain", "lung", "breast", "bone", "skin"],
@@ -65,15 +76,18 @@ CLASS_NAMES = {
 
 
 def ensure_class_names():
+    """Write class_names.json into every model folder if not already present."""
     for path, classes in CLASS_NAMES.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
             with open(path, "w") as f:
                 json.dump(classes, f)
-            print(f"[download_models] Wrote class_names.json -> {path.parent.name}")
+            print(f"[download_models] Wrote class_names.json → {path.parent.name}")
 
 
 def download_models():
+    """Download all missing model weight files from Google Drive."""
+
     if os.environ.get("SKIP_MODEL_DOWNLOAD", "").lower() == "true":
         print("[download_models] SKIP_MODEL_DOWNLOAD=true — using local models.")
         ensure_class_names()
