@@ -66,12 +66,15 @@ export default function DiagnosticWorkspacePage() {
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
 
-  // ── Load Tenant Config, Health, & Initial Audit Trail on Mount ──
+  // ── Load Tenant Config, Health, & Dynamic Heartbeat Auto-Polling ──
   useEffect(() => {
-    checkBackendHealth().then((health) => {
-      setHealthInfo(health);
-    });
+    const pollHealth = () => {
+      checkBackendHealth().then((health) => {
+        setHealthInfo(health);
+      });
+    };
 
+    pollHealth();
     fetchTenantConfig().then((cfg) => {
       setTenant(cfg);
     });
@@ -79,6 +82,10 @@ export default function DiagnosticWorkspacePage() {
     fetchAuditLogs().then((logs) => {
       setAuditLogs(logs);
     });
+
+    // Auto-reconnect & poll telemetry every 4 seconds
+    const intervalId = setInterval(pollHealth, 4000);
+    return () => clearInterval(intervalId);
   }, []);
 
   // ── Helper to Append Local Audit Log & Sync Server ──
