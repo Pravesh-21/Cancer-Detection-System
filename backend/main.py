@@ -58,12 +58,22 @@ audit_logs: List[AuditLogEntry] = [
 ]
 
 
+_init_error: Optional[str] = None
+
+
 def _sync_init():
-    global _models_ready
-    download_models()
-    engine.initialize()
-    _models_ready = True
-    print("==> All models loaded. Service is fully operational.")
+    global _models_ready, _init_error
+    try:
+        download_models()
+        engine.initialize()
+        _models_ready = True
+        _init_error = None
+        print("==> All models loaded. Service is fully operational.")
+    except Exception as e:
+        import traceback
+        _init_error = f"{type(e).__name__}: {str(e)}"
+        print(f"==> ERROR INITIALIZING MODELS: {_init_error}")
+        traceback.print_exc()
 
 
 @asynccontextmanager
@@ -95,6 +105,7 @@ _allowed_origins = _default_origins + [o.strip() for o in _extra.split(",") if o
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -103,9 +114,11 @@ app.add_middleware(
 
 @app.get("/health")
 def health_check():
+    status = "operational" if _models_ready else ("error" if _init_error else "initializing")
     return {
-        "status": "operational" if _models_ready else "initializing",
+        "status": status,
         "models_initialized": _models_ready,
+        "init_error": _init_error,
         "available_domains": list(engine.child_models.keys()) if _models_ready else [],
         "router_classes": getattr(engine, "parent_classes", []),
         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -139,9 +152,14 @@ async def diagnose_image(
     domain_override: Optional[str] = Form(None),
 ):
     if not _models_ready:
+        if _init_error:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Neural model loading failed during container boot: {_init_error}. Check Render logs."
+            )
         raise HTTPException(
             status_code=503,
-            detail="Models are still loading. Please wait a moment and try again."
+            detail="Neural inference engine is still initializing and loading model weights. Please wait a moment and retry."
         )
 
     if not file.filename:

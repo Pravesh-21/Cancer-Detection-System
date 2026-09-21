@@ -36,6 +36,8 @@ interface DicomViewerProps {
   inferenceStatus: InferenceStatus;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   isHeatmapActive?: boolean;
+  isWarmingUp?: boolean;
+  isEngineOffline?: boolean;
   onFileUpload: (file: File) => void;
   onClearImage: () => void;
   onViewportChange: (settings: ViewportSettings) => void;
@@ -51,6 +53,8 @@ export default function DicomViewer({
   inferenceStatus,
   fileInputRef,
   isHeatmapActive = false,
+  isWarmingUp = false,
+  isEngineOffline = false,
   onFileUpload,
   onClearImage,
   onViewportChange,
@@ -453,19 +457,31 @@ export default function DicomViewer({
       <button
         type="button"
         onClick={onRunDiagnostic}
-        disabled={!hasImage || isLoading}
+        disabled={!hasImage || isLoading || isWarmingUp || isEngineOffline}
         className={cn(
           "w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-bold text-[13px] transition-all shadow-xs",
-          hasImage && !isLoading
+          hasImage && !isLoading && !isWarmingUp && !isEngineOffline
             ? "bg-clinical-600 hover:bg-clinical-700 text-white active:scale-[0.99] cursor-pointer"
+            : isWarmingUp
+            ? "bg-amber-50 text-amber-800 border border-amber-300 cursor-wait"
             : "bg-slate-100 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60"
         )}
-        aria-disabled={!hasImage || isLoading}
+        aria-disabled={!hasImage || isLoading || isWarmingUp || isEngineOffline}
       >
         {isLoading ? (
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
             <span>{STRINGS.viewport.analyzingPrompt}</span>
+          </>
+        ) : isWarmingUp ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+            <span>Inference Models Initializing (Downloading Weights)...</span>
+          </>
+        ) : isEngineOffline ? (
+          <>
+            <Play className="w-4 h-4 opacity-40" />
+            <span>Inference Gateway Offline (Reconnecting...)</span>
           </>
         ) : isComplete ? (
           <>

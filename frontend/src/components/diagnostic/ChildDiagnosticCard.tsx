@@ -11,6 +11,7 @@ import {
   Layers,
   Sparkles,
   AlertOctagon,
+  RotateCcw,
 } from "lucide-react";
 import {
   cn,
@@ -26,6 +27,8 @@ import { getRiskTierConfig, classifyClinicalRisk } from "@/utils/riskRegistry";
 interface ChildDiagnosticCardProps {
   status: InferenceStatus;
   childResult: DiagnosticResult | null;
+  errorMessage?: string | null;
+  onRetry?: () => void;
   isHeatmapActive?: boolean;
   onToggleHeatmap?: () => void;
 }
@@ -33,6 +36,8 @@ interface ChildDiagnosticCardProps {
 export default function ChildDiagnosticCard({
   status,
   childResult,
+  errorMessage,
+  onRetry,
   isHeatmapActive = false,
   onToggleHeatmap,
 }: ChildDiagnosticCardProps) {
@@ -120,12 +125,27 @@ export default function ChildDiagnosticCard({
       )}
 
       {diagnosticState === "error" && (
-        <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-center space-y-1">
+        <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-center space-y-2 animate-fade-in">
           <AlertOctagon className="w-6 h-6 mx-auto text-rose-600 mb-1" />
-          <p className="text-[12px] font-bold">Diagnostic Inference Interrupted</p>
+          <p className="text-[13px] font-bold">Diagnostic Inference Interrupted</p>
+          <div className="p-2.5 rounded bg-white/80 border border-rose-200 text-[11px] text-rose-700 text-left font-mono break-words">
+            {errorMessage || "Pipeline encountered an evaluation exception. Verify network connection and retry."}
+          </div>
           <p className="text-[11px] text-rose-600">
-            Pipeline encountered an evaluation exception. Verify network connection and retry.
+            {errorMessage?.includes("initializing") || errorMessage?.includes("loading")
+              ? "The cloud server is online and downloading neural model weights. Please allow 30–60 seconds, then retry."
+              : "Verify that the backend service is healthy and retry."}
           </p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-[12px] font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition-all active:scale-[0.98] cursor-pointer mt-1"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Retry Diagnostic Pipeline</span>
+            </button>
+          )}
         </div>
       )}
 

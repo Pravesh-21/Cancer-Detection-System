@@ -49,6 +49,7 @@ export default function DiagnosticWorkspacePage() {
   const [uploadedFileSize, setUploadedFileSize] = useState<number | null>(null);
 
   const [inferenceStatus, setInferenceStatus] = useState<InferenceStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [result, setResult] = useState<ClinicalSessionResult | null>(null);
   const [dicom, setDicom] = useState<DicomMetadata | null>(null);
   const [overrideDomain, setOverrideDomain] = useState<Domain | null>(null);
@@ -152,6 +153,7 @@ export default function DiagnosticWorkspacePage() {
     setUploadedFileName(null);
     setUploadedFileSize(null);
     setInferenceStatus("idle");
+    setErrorMessage(null);
     setResult(null);
     setDicom(null);
     setOverrideDomain(null);
@@ -164,21 +166,25 @@ export default function DiagnosticWorkspacePage() {
     if (!uploadedFile) return;
 
     setInferenceStatus("loading");
+    setErrorMessage(null);
 
     try {
       const response = await runApiDiagnosis(uploadedFile, uploadedFile.name);
       setResult(response.sessionResult);
       setDicom(response.dicomMetadata);
       setInferenceStatus("complete");
+      setErrorMessage(null);
 
       addAuditEvent(
         "DIAGNOSTIC_INFERENCE_COMPLETE",
         `Inferred ${response.sessionResult.diagnosticFinding.displayName} (${(response.sessionResult.diagnosticFinding.confidence * 100).toFixed(1)}% confidence) via ${response.sessionResult.domainClassification.predictedDomain.toUpperCase()} model.`
       );
-    } catch (err) {
-      console.error("Diagnostic execution error:", err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("Diagnostic execution error:", message);
       setInferenceStatus("error");
-      addAuditEvent("INFERENCE_ERROR", "Pipeline execution encountered an error.", "WARNING");
+      setErrorMessage(message);
+      addAuditEvent("INFERENCE_ERROR", `Pipeline error: ${message}`, "WARNING");
     }
   }, [uploadedFile, addAuditEvent]);
 
@@ -189,20 +195,24 @@ export default function DiagnosticWorkspacePage() {
       if (!uploadedFile) return;
 
       setInferenceStatus("loading");
+      setErrorMessage(null);
 
       try {
         const response = await runApiDiagnosis(uploadedFile, uploadedFile.name, domain);
         setResult(response.sessionResult);
         setDicom(response.dicomMetadata);
         setInferenceStatus("complete");
+        setErrorMessage(null);
 
         addAuditEvent(
           "MANUAL_DOMAIN_OVERRIDE",
           `User redirected study to ${domain.toUpperCase()} domain. Inferred ${response.sessionResult.diagnosticFinding.displayName}.`
         );
-      } catch (err) {
-        console.error("Domain override error:", err);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("Domain override error:", message);
         setInferenceStatus("error");
+        setErrorMessage(message);
       }
     },
     [uploadedFile, addAuditEvent]
@@ -212,6 +222,10 @@ export default function DiagnosticWorkspacePage() {
     overrideDomain ||
     result?.domainClassification.predictedDomain ||
     null;
+
+  const isOperational = healthInfo.online && (healthInfo.status === "operational" || healthInfo.modelsInitialized === true);
+  const isWarmingUp = healthInfo.online && !isOperational && healthInfo.status !== "error";
+  const isEngineOffline = !healthInfo.online || healthInfo.status === "error";
 
   // ── Export JSON Findings ──
   const handleExportMetrics = useCallback(() => {
@@ -313,9 +327,14 @@ export default function DiagnosticWorkspacePage() {
               uploadedFileSize={uploadedFileSize}
               viewport={viewport}
               inferenceStatus={inferenceStatus}
+              isWarmingUp={isWarmingUp}
+              isEngineOffline={isEngineOffline}
               fileInputRef={fileInputRef}
               isHeatmapActive={isHeatmapActive}
-              onFileUpload={handleFileUpload}
+              onFileUpload={(file) => {
+                setErrorMessage(null);
+                handleFileUpload(file);
+              }}
               onClearImage={handleClearImage}
               onViewportChange={setViewport}
               onRunDiagnostic={handleRunDiagnostic}
@@ -334,6 +353,8 @@ export default function DiagnosticWorkspacePage() {
             <ChildDiagnosticCard
               status={inferenceStatus}
               childResult={result ? result.diagnosticFinding : null}
+              errorMessage={errorMessage}
+              onRetry={handleRunDiagnostic}
               isHeatmapActive={isHeatmapActive}
               onToggleHeatmap={() => setIsHeatmapActive(!isHeatmapActive)}
             />

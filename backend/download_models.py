@@ -103,10 +103,17 @@ def download_models():
     print("=" * 60)
 
     all_ok = True
+    router_final_path = MODELS_DIR / "Parent_Model" / "router_model_final.keras"
+
     for spec in MODEL_FILES:
         dest: Path = spec["dest"]
         file_id: str = spec["file_id"]
         description: str = spec["description"]
+
+        # Skip redundant router fallback downloads if the primary router is already present
+        if dest.name in ["best_finetuned.keras", "best_head.keras"] and router_final_path.exists():
+            print(f"  ⚡ Skipping redundant fallback ({dest.name}) — primary router is present.")
+            continue
 
         dest.parent.mkdir(parents=True, exist_ok=True)
 

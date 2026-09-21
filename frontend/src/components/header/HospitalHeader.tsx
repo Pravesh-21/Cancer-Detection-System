@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Database, Upload, ShieldCheck, Activity, Wifi, WifiOff } from "lucide-react";
+import { Database, Upload, ShieldCheck, Activity, Wifi, WifiOff, Loader2, AlertTriangle } from "lucide-react";
 import type { TenantBranding } from "@/config/tenant";
 import { STRINGS } from "@/config/strings";
 import type { BackendHealthInfo } from "@/lib/types";
@@ -24,6 +24,9 @@ export default function HospitalHeader({
   customLogo,
 }: HospitalHeaderProps) {
   const isOnline = healthInfo.online;
+  const isOperational = isOnline && (healthInfo.status === "operational" || healthInfo.modelsInitialized === true);
+  const isError = isOnline && healthInfo.status === "error";
+  const isInitializing = isOnline && !isOperational && !isError;
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs" role="banner">
@@ -64,31 +67,44 @@ export default function HospitalHeader({
           </div>
 
           {/* Dynamic Backend Engine Health & Ping */}
-          <div
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium ${
-              isOnline
-                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                : "bg-rose-50 text-rose-800 border-rose-200"
-            }`}
-          >
-            {isOnline ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <Wifi className="w-3.5 h-3.5 text-emerald-600" />
-                <span>
-                  {STRINGS.header.telemetryServerLabel}: {STRINGS.header.onlineStatus}
-                  {healthInfo.latencyMs !== undefined && ` (${healthInfo.latencyMs}ms)`}
-                </span>
-              </>
-            ) : (
-              <>
-                <WifiOff className="w-3.5 h-3.5 text-rose-600" />
-                <span>
-                  {STRINGS.header.telemetryServerLabel}: {STRINGS.header.offlineStatus}
-                </span>
-              </>
-            )}
-          </div>
+          {isOperational ? (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-emerald-50 text-emerald-800 border-emerald-200">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <Wifi className="w-3.5 h-3.5 text-emerald-600" />
+              <span>
+                {STRINGS.header.telemetryServerLabel}: Operational
+                {healthInfo.latencyMs !== undefined && ` (${healthInfo.latencyMs}ms)`}
+              </span>
+            </div>
+          ) : isInitializing ? (
+            <div
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-amber-50 text-amber-800 border-amber-200"
+              title="Backend server is connected. Model weights are downloading and initializing in memory."
+            >
+              <Loader2 className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+              <span>
+                {STRINGS.header.telemetryServerLabel}: Initializing Models...
+                {healthInfo.latencyMs !== undefined && ` (${healthInfo.latencyMs}ms)`}
+              </span>
+            </div>
+          ) : isError ? (
+            <div
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-rose-50 text-rose-800 border-rose-200"
+              title={healthInfo.initError || "Model initialization failed on server"}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+              <span>
+                {STRINGS.header.telemetryServerLabel}: Engine Error
+              </span>
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-rose-50 text-rose-800 border-rose-200">
+              <WifiOff className="w-3.5 h-3.5 text-rose-600" />
+              <span>
+                {STRINGS.header.telemetryServerLabel}: {STRINGS.header.offlineStatus}
+              </span>
+            </div>
+          )}
 
           {/* PACS Routing Gateway Node */}
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200 font-medium">

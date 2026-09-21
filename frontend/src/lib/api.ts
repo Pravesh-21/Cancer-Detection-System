@@ -24,18 +24,20 @@ export async function checkBackendHealth(): Promise<BackendHealthInfo> {
       cache: "no-store",
     });
     const latency = Math.round(performance.now() - start);
-    if (!res.ok) return { online: false, latencyMs: latency };
+    if (!res.ok) return { online: false, latencyMs: latency, status: "offline" };
     const data = await res.json();
     return {
       online: true,
       serverUrl: API_BASE_URL,
-      status: data.status,
+      status: data.status || (data.models_initialized ? "operational" : "initializing"),
+      modelsInitialized: !!data.models_initialized,
+      initError: data.init_error,
       modelVersion: data.modelVersion,
       availableDomains: data.available_domains,
       latencyMs: latency,
     };
   } catch {
-    return { online: false, latencyMs: Math.round(performance.now() - start) };
+    return { online: false, latencyMs: Math.round(performance.now() - start), status: "offline" };
   }
 }
 
@@ -113,8 +115,14 @@ export async function runApiDiagnosis(
   });
 
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Diagnostic API failed (${res.status}): ${errText}`);
+    let errDetail = "";
+    try {
+      const errJson = await res.json();
+      errDetail = errJson.detail || JSON.stringify(errJson);
+    } catch {
+      errDetail = await res.text();
+    }
+    throw new Error(errDetail || `Diagnostic API failed (${res.status})`);
   }
 
   return await res.json();

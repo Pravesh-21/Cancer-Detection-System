@@ -110,7 +110,9 @@ export interface AuditLogEntry {
 export interface BackendHealthInfo {
   online: boolean;
   serverUrl?: string;
-  status?: string;
+  status?: "operational" | "initializing" | "error" | "offline" | string;
+  modelsInitialized?: boolean;
+  initError?: string | null;
   modelVersion?: string;
   latencyMs?: number;
   availableDomains?: string[];
