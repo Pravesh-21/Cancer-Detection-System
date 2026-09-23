@@ -78,7 +78,10 @@ def _sync_init():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _sync_init)
     yield
 
@@ -119,7 +122,8 @@ def health_check():
         "status": status,
         "models_initialized": _models_ready,
         "init_error": _init_error,
-        "available_domains": list(engine.child_models.keys()) if _models_ready else [],
+        "available_domains": ["brain", "lung", "breast", "bone", "skin"],
+        "cached_domains": list(engine.child_models.keys()),
         "router_classes": getattr(engine, "parent_classes", []),
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "modelVersion": TENANT_CONFIG["modelVersion"],

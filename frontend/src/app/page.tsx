@@ -41,7 +41,7 @@ export default function DiagnosticWorkspacePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [tenant, setTenant] = useState<TenantBranding>(DEFAULT_TENANT);
-  const [healthInfo, setHealthInfo] = useState<BackendHealthInfo>({ online: true });
+  const [healthInfo, setHealthInfo] = useState<BackendHealthInfo>({ online: false, status: "offline" });
 
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -84,8 +84,8 @@ export default function DiagnosticWorkspacePage() {
       setAuditLogs(logs);
     });
 
-    // Auto-reconnect & poll telemetry every 4 seconds
-    const intervalId = setInterval(pollHealth, 4000);
+    // Auto-reconnect & poll telemetry every 12 seconds
+    const intervalId = setInterval(pollHealth, 12000);
     return () => clearInterval(intervalId);
   }, []);
 

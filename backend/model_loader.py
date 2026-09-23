@@ -73,8 +73,15 @@ class ModelEngine:
         print(f" PyTorch Hardware Target : {DEVICE}")
         print("=" * 60)
 
+        # Optimize TensorFlow for low-resource cloud CPUs
+        try:
+            tf.config.threading.set_inter_op_parallelism_threads(1)
+            tf.config.threading.set_intra_op_parallelism_threads(1)
+        except Exception:
+            pass
+
         self._load_parent_router()
-        self._load_child_models()
+        self.child_models: Dict[str, Tuple[nn.Module, List[str]]] = {}
 
         self.child_transform = transforms.Compose([
             transforms.Resize((224, 224)),
@@ -83,7 +90,7 @@ class ModelEngine:
         ])
 
         self.initialized = True
-        print(" ALL DIAGNOSTIC ENGINES LOADED & READY FOR INFERENCE!\n")
+        print(" DOMAIN ROUTER LOADED & READY (Child models configured for on-demand loading)!\n")
 
     def _load_parent_router(self):
         parent_dir = MODELS_DIR / "Parent_Model"
@@ -109,8 +116,10 @@ class ModelEngine:
         self.parent_model = tf.keras.models.load_model(chosen_weight)
         print(f" -> Router classes: {self.parent_classes}")
 
-    def _load_child_models(self):
-        self.child_models: Dict[str, Tuple[nn.Module, List[str]]] = {}
+    def get_or_load_child_model(self, domain: str) -> Optional[Tuple[nn.Module, List[str]]]:
+        """Load domain-specific child network on demand into RAM."""
+        if domain in self.child_models:
+            return self.child_models[domain]
 
         child_folders = {
             "brain": MODELS_DIR / "Child_Brain_Cancer_Processed",
@@ -119,29 +128,34 @@ class ModelEngine:
             "bone": MODELS_DIR / "Child_Bone_Cancer_Processed",
         }
 
-        for domain, folder in child_folders.items():
-            weight_path = folder / "best_child_model.pt"
-            classes_path = folder / "class_names.json"
+        folder = child_folders.get(domain)
+        if not folder:
+            return None
 
-            if not weight_path.exists() or not classes_path.exists():
-                print(f"Warning: Model weights missing for {domain} at {folder}")
-                continue
+        weight_path = folder / "best_child_model.pt"
+        classes_path = folder / "class_names.json"
 
-            with open(classes_path, "r") as f:
-                classes = json.load(f)
+        if not weight_path.exists() or not classes_path.exists():
+            print(f"Warning: Model weights missing for {domain} at {folder}")
+            return None
 
-            model = models.densenet121(weights=None)
-            in_features = model.classifier.in_features
-            model.classifier = nn.Sequential(
-                nn.Dropout(0.3),
-                nn.Linear(in_features, len(classes))
-            )
-            model.load_state_dict(torch.load(weight_path, map_location=DEVICE))
-            model = model.to(DEVICE)
-            model.eval()
+        with open(classes_path, "r") as f:
+            classes = json.load(f)
 
-            self.child_models[domain] = (model, classes)
-            print(f"Loaded Child Network: {domain.upper()} ({len(classes)} classes: {classes})")
+        print(f"Loading Child Network on-demand: {domain.upper()}...")
+        model = models.densenet121(weights=None)
+        in_features = model.classifier.in_features
+        model.classifier = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(in_features, len(classes))
+        )
+        model.load_state_dict(torch.load(weight_path, map_location=DEVICE))
+        model = model.to(DEVICE)
+        model.eval()
+
+        self.child_models[domain] = (model, classes)
+        print(f"Loaded Child Network: {domain.upper()} ({len(classes)} classes)")
+        return self.child_models[domain]
 
     def predict_domain(self, image_pil: Image.Image) -> Tuple[str, float, float, List[Dict[str, Any]]]:
         start_time = time.perf_counter()
@@ -171,7 +185,8 @@ class ModelEngine:
     def predict_child(self, domain: str, image_pil: Image.Image) -> Tuple[str, str, str, float, float, List[Dict[str, Any]]]:
         start_time = time.perf_counter()
 
-        if domain not in self.child_models:
+        child_info = self.get_or_load_child_model(domain)
+        if not child_info:
             dummy_probs = [
                 {"className": "mel", "displayName": "Melanoma", "probability": 0.8841, "riskLevel": "high"},
                 {"className": "nv", "displayName": "Benign Nevus", "probability": 0.0820, "riskLevel": "normal"},
@@ -180,7 +195,7 @@ class ModelEngine:
             latency_ms = (time.perf_counter() - start_time) * 1000
             return "mel", "Melanoma", "high", 0.8841, round(latency_ms, 1), dummy_probs
 
-        model, class_names = self.child_models[domain]
+        model, class_names = child_info
         img = image_pil.convert("RGB")
         tensor = self.child_transform(img).unsqueeze(0).to(DEVICE)
 
