@@ -60,6 +60,30 @@ MODEL_FILES = [
     },
 ]
 
+# ── Child model specifications by domain ──────────────────────────────────────
+CHILD_MODEL_SPECS = {
+    "brain": {
+        "description": "Child — Brain Pathology Classifier",
+        "file_id": "1NsS8IZrdB8BguUDyjXxC3AqbpYriD00w",
+        "dest": MODELS_DIR / "Child_Brain_Cancer_Processed" / "best_child_model.pt",
+    },
+    "lung": {
+        "description": "Child — Lung Pathology Classifier",
+        "file_id": "1Ch5gr1JaUfByNQTf3DxpDZ1JFh3aR9sB",
+        "dest": MODELS_DIR / "Child_Lung_Cancer_Processed" / "best_child_model.pt",
+    },
+    "breast": {
+        "description": "Child — Breast Pathology Classifier",
+        "file_id": "1evvS_RvzZZWiVnfAyInwsOQLILKcFZlF",
+        "dest": MODELS_DIR / "Child_Breast_Cancer_Processed" / "best_child_model.pt",
+    },
+    "bone": {
+        "description": "Child — Bone Pathology Classifier",
+        "file_id": "1bgXwHAQgSQlzUJtwe_6OlpbYkzxqnbk0",
+        "dest": MODELS_DIR / "Child_Bone_Cancer_Processed" / "best_child_model.pt",
+    },
+}
+
 # ── Embedded class names ─────────────────────────────────────────────────────
 CLASS_NAMES = {
     MODELS_DIR / "Parent_Model" / "class_names.json":
@@ -82,7 +106,7 @@ def ensure_class_names():
         if not path.exists():
             with open(path, "w") as f:
                 json.dump(classes, f)
-            print(f"[download_models] Wrote class_names.json → {path.parent.name}")
+            print(f"[download_models] Wrote class_names.json -> {path.parent.name}")
 
 
 def _download_from_gdrive(file_id: str, dest: Path, timeout: int = 120) -> bool:
@@ -133,69 +157,88 @@ def _download_from_gdrive(file_id: str, dest: Path, timeout: int = 120) -> bool:
     return True
 
 
-def download_models():
-    """Download all missing model weight files from Google Drive."""
+def download_child_model(domain: str) -> bool:
+    """Download an individual domain child model on demand from Google Drive."""
+    spec = CHILD_MODEL_SPECS.get(domain)
+    if not spec:
+        return False
 
-    if os.environ.get("SKIP_MODEL_DOWNLOAD", "").lower() == "true":
-        print("[download_models] SKIP_MODEL_DOWNLOAD=true - using local models.")
-        ensure_class_names()
-        return
+    dest: Path = spec["dest"]
+    file_id: str = spec["file_id"]
+    description: str = spec["description"]
 
-    print("\n" + "=" * 60)
-    print(" MODEL WEIGHT DOWNLOAD PHASE (Google Drive)")
-    print("=" * 60)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() and dest.stat().st_size > 1000:
+        return True
 
-    all_ok = True
-    router_final_path = MODELS_DIR / "Parent_Model" / "router_model_final.keras"
+    print(f"[download_models] On-demand download: {description} ...")
+    success = False
+    try:
+        success = _download_from_gdrive(file_id, dest, timeout=120)
+    except Exception as e:
+        print(f"[download_models] Direct download failed ({e}), trying gdown...")
 
-    for spec in MODEL_FILES:
-        dest: Path = spec["dest"]
-        file_id: str = spec["file_id"]
-        description: str = spec["description"]
-
-        # Skip redundant router fallback downloads if the primary router is already present
-        if dest.name in ["best_finetuned.keras", "best_head.keras"] and router_final_path.exists():
-            print(f"  [SKIP] Redundant fallback ({dest.name}) - primary router is present.")
-            continue
-
-        dest.parent.mkdir(parents=True, exist_ok=True)
-
-        if dest.exists():
-            size_mb = dest.stat().st_size / (1024 * 1024)
-            print(f"  [OK] {description} - already cached ({size_mb:.1f} MB)")
-            continue
-
-        print(f"  [DL] Downloading: {description} ...")
-        success = False
-
-        # Attempt 1: Direct streaming with automatic virus-scan confirmation bypass
+    if not success and GDOWN_AVAILABLE:
         try:
-            success = _download_from_gdrive(file_id, dest, timeout=120)
+            gdown.download(id=file_id, output=str(dest), quiet=True)
+            success = dest.exists()
         except Exception as e:
-            print(f"  [WARN] Direct download failed ({e}), trying fallback...")
+            print(f"[download_models] gdown failed ({e})")
 
-        # Attempt 2: gdown fallback if direct stream failed
-        if not success and GDOWN_AVAILABLE:
-            try:
-                gdown.download(id=file_id, output=str(dest), quiet=True)
-                success = dest.exists()
-            except Exception as e:
-                print(f"  [WARN] gdown download failed ({e})")
+    if dest.exists() and dest.stat().st_size > 1000:
+        size_mb = dest.stat().st_size / (1024 * 1024)
+        print(f"[download_models] OK: {description} cached ({size_mb:.1f} MB)")
+        return True
+    return False
 
-        if dest.exists():
-            size_mb = dest.stat().st_size / (1024 * 1024)
-            print(f"  [OK] {description} - done ({size_mb:.1f} MB)")
-        else:
-            print(f"  [FAIL] {description} - file not found after download!")
-            all_ok = False
+
+def download_models():
+    """Startup download: ensures class names exist and downloads the Parent Router.
+    Child models are fetched on-demand during inference to ensure sub-10s boot."""
 
     ensure_class_names()
 
-    if all_ok:
-        print("\n ALL MODELS READY FOR INFERENCE\n")
+    if os.environ.get("SKIP_MODEL_DOWNLOAD", "").lower() == "true":
+        print("[download_models] SKIP_MODEL_DOWNLOAD=true - using local models.")
+        return
+
+    print("\n" + "=" * 60)
+    print(" MODEL INITIALIZATION: Parent Router Weight Check")
+    print("=" * 60)
+
+    # 1. Download Parent Router
+    router_dest = MODELS_DIR / "Parent_Model" / "router_model_final.keras"
+    router_dest.parent.mkdir(parents=True, exist_ok=True)
+
+    if not router_dest.exists() or router_dest.stat().st_size < 1000:
+        print("  [DL] Downloading Parent Router (router_model_final.keras) ...")
+        success = False
+        try:
+            success = _download_from_gdrive("1GYWKIndDawSWGZyc_chPtnmybgyFIQAh", router_dest, timeout=120)
+        except Exception as e:
+            print(f"  [WARN] Direct router download failed: {e}")
+
+        if not success and GDOWN_AVAILABLE:
+            try:
+                gdown.download(id="1GYWKIndDawSWGZyc_chPtnmybgyFIQAh", output=str(router_dest), quiet=True)
+            except Exception as e:
+                print(f"  [WARN] gdown router download failed: {e}")
+
+    if router_dest.exists() and router_dest.stat().st_size > 1000:
+        size_mb = router_dest.stat().st_size / (1024 * 1024)
+        print(f"  [OK] Parent Router cached ({size_mb:.1f} MB)")
     else:
-        print("\n WARNING: Some models failed to download. Check Drive permissions.\n")
+        print("  [FAIL] Parent Router failed to download!")
+
+    # 2. Check if background pre-caching of all child models is requested
+    if os.environ.get("DOWNLOAD_ALL_MODELS", "").lower() == "true":
+        print("[download_models] DOWNLOAD_ALL_MODELS=true - pre-caching child networks...")
+        for domain in CHILD_MODEL_SPECS:
+            download_child_model(domain)
+
+    print("\n PARENT ROUTER READY. Child models loaded on-demand per request.\n")
 
 
 if __name__ == "__main__":
     download_models()
+

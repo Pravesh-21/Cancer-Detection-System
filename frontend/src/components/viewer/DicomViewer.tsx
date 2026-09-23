@@ -18,6 +18,7 @@ import {
   Sliders,
   Trash2,
   Sparkles,
+  RotateCw,
 } from "lucide-react";
 import { cn, formatFileSize } from "@/lib/utils";
 import type { ViewportSettings, InferenceStatus } from "@/lib/types";
@@ -38,6 +39,8 @@ interface DicomViewerProps {
   isHeatmapActive?: boolean;
   isWarmingUp?: boolean;
   isEngineOffline?: boolean;
+  isWakingUp?: boolean;
+  onWakeServer?: () => void;
   onFileUpload: (file: File) => void;
   onClearImage: () => void;
   onViewportChange: (settings: ViewportSettings) => void;
@@ -55,6 +58,8 @@ export default function DicomViewer({
   isHeatmapActive = false,
   isWarmingUp = false,
   isEngineOffline = false,
+  isWakingUp = false,
+  onWakeServer,
   onFileUpload,
   onClearImage,
   onViewportChange,
@@ -456,17 +461,19 @@ export default function DicomViewer({
       {/* ── Primary Diagnostic Action Execution Button ── */}
       <button
         type="button"
-        onClick={onRunDiagnostic}
-        disabled={!hasImage || isLoading || isWarmingUp || isEngineOffline}
+        onClick={isEngineOffline ? onWakeServer : onRunDiagnostic}
+        disabled={isLoading || isWarmingUp || (isEngineOffline ? isWakingUp : !hasImage)}
         className={cn(
           "w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-bold text-[13px] transition-all shadow-xs",
           hasImage && !isLoading && !isWarmingUp && !isEngineOffline
             ? "bg-clinical-600 hover:bg-clinical-700 text-white active:scale-[0.99] cursor-pointer"
             : isWarmingUp
             ? "bg-amber-50 text-amber-800 border border-amber-300 cursor-wait"
+            : isEngineOffline
+            ? "bg-slate-800 hover:bg-slate-700 text-white active:scale-[0.99] cursor-pointer shadow-sm"
             : "bg-slate-100 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60"
         )}
-        aria-disabled={!hasImage || isLoading || isWarmingUp || isEngineOffline}
+        aria-disabled={isLoading || isWarmingUp || (isEngineOffline ? isWakingUp : !hasImage)}
       >
         {isLoading ? (
           <>
@@ -480,8 +487,8 @@ export default function DicomViewer({
           </>
         ) : isEngineOffline ? (
           <>
-            <Play className="w-4 h-4 opacity-40" />
-            <span>Inference Gateway Offline (Reconnecting...)</span>
+            <RotateCw className={cn("w-4 h-4 text-amber-400", isWakingUp && "animate-spin")} />
+            <span>{isWakingUp ? "Connecting to Inference Gateway..." : "Wake Up Neural Gateway (Click to Connect)"}</span>
           </>
         ) : isComplete ? (
           <>

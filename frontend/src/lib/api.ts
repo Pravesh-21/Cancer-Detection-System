@@ -9,7 +9,7 @@ import { DEFAULT_TENANT, type TenantBranding } from "@/config/tenant";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://127.0.0.1:8001";
+  (typeof window !== "undefined" ? "/api/backend" : "https://cancer-detection-system-n1hx.onrender.com");
 
 export interface DiagnosisApiResponse {
   sessionResult: ClinicalSessionResult;
@@ -24,7 +24,21 @@ export async function checkBackendHealth(): Promise<BackendHealthInfo> {
       cache: "no-store",
     });
     const latency = Math.round(performance.now() - start);
-    if (!res.ok) return { online: false, latencyMs: latency, status: "offline" };
+
+    if (!res.ok) {
+      // 503 = Render hibernate-wake-error; 429 = Cloudflare rate limit cooldown
+      if (res.status === 503 || res.status === 502 || res.status === 429) {
+        return {
+          online: true,
+          status: "initializing",
+          serverUrl: API_BASE_URL,
+          latencyMs: latency,
+          initError: "Server container is waking up from standby (Render Free Tier ~30s)...",
+        };
+      }
+      return { online: false, latencyMs: latency, status: "offline" };
+    }
+
     const data = await res.json();
     return {
       online: true,
@@ -33,7 +47,7 @@ export async function checkBackendHealth(): Promise<BackendHealthInfo> {
       modelsInitialized: !!data.models_initialized,
       initError: data.init_error,
       modelVersion: data.modelVersion,
-      availableDomains: data.available_domains,
+      availableDomains: data.available_domains || ["brain", "lung", "breast", "bone", "skin"],
       latencyMs: latency,
     };
   } catch {

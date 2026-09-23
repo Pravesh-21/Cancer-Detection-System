@@ -66,16 +66,38 @@ export default function DiagnosticWorkspacePage() {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [isRefreshingHealth, setIsRefreshingHealth] = useState(false);
 
-  // ── Load Tenant Config, Health, & Dynamic Heartbeat Auto-Polling ──
+  // ── Manual Gateway Reconnect / Wake Handler ──
+  const handleRefreshHealth = useCallback(async () => {
+    setIsRefreshingHealth(true);
+    try {
+      const health = await checkBackendHealth();
+      setHealthInfo(health);
+    } finally {
+      setIsRefreshingHealth(false);
+    }
+  }, []);
+
+  // ── Load Tenant Config, Health, & Smart Heartbeat Polling ──
   useEffect(() => {
-    const pollHealth = () => {
-      checkBackendHealth().then((health) => {
-        setHealthInfo(health);
-      });
+    let timerId: NodeJS.Timeout | null = null;
+    let pollCount = 0;
+    const maxPolls = 6;
+
+    const check = async () => {
+      const health = await checkBackendHealth();
+      setHealthInfo(health);
+
+      // Only continue polling if backend is currently warming up/initializing
+      if (health.status === "initializing" && pollCount < maxPolls) {
+        pollCount++;
+        timerId = setTimeout(check, 10000);
+      }
     };
 
-    pollHealth();
+    check();
+
     fetchTenantConfig().then((cfg) => {
       setTenant(cfg);
     });
@@ -84,9 +106,9 @@ export default function DiagnosticWorkspacePage() {
       setAuditLogs(logs);
     });
 
-    // Auto-reconnect & poll telemetry every 12 seconds
-    const intervalId = setInterval(pollHealth, 12000);
-    return () => clearInterval(intervalId);
+    return () => {
+      if (timerId) clearTimeout(timerId);
+    };
   }, []);
 
   // ── Helper to Append Local Audit Log & Sync Server ──
@@ -263,6 +285,8 @@ export default function DiagnosticWorkspacePage() {
         onTriggerUpload={() => fileInputRef.current?.click()}
         onAuditLogs={() => setIsAuditModalOpen(true)}
         unreadAuditCount={auditLogs.length}
+        onRefreshHealth={handleRefreshHealth}
+        isRefreshingHealth={isRefreshingHealth}
       />
 
       {/* ── Main Workspace ── */}
@@ -329,6 +353,8 @@ export default function DiagnosticWorkspacePage() {
               inferenceStatus={inferenceStatus}
               isWarmingUp={isWarmingUp}
               isEngineOffline={isEngineOffline}
+              isWakingUp={isRefreshingHealth}
+              onWakeServer={handleRefreshHealth}
               fileInputRef={fileInputRef}
               isHeatmapActive={isHeatmapActive}
               onFileUpload={(file) => {

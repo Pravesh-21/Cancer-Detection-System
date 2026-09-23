@@ -13,6 +13,8 @@ interface HospitalHeaderProps {
   onAuditLogs: () => void;
   unreadAuditCount?: number;
   customLogo?: React.ReactNode;
+  onRefreshHealth?: () => void;
+  isRefreshingHealth?: boolean;
 }
 
 export default function HospitalHeader({
@@ -22,6 +24,8 @@ export default function HospitalHeader({
   onAuditLogs,
   unreadAuditCount = 0,
   customLogo,
+  onRefreshHealth,
+  isRefreshingHealth = false,
 }: HospitalHeaderProps) {
   const isOnline = healthInfo.online;
   const isOperational = isOnline && (healthInfo.status === "operational" || healthInfo.modelsInitialized === true);
@@ -68,7 +72,11 @@ export default function HospitalHeader({
 
           {/* Dynamic Backend Engine Health & Ping */}
           {isOperational ? (
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-emerald-50 text-emerald-800 border-emerald-200">
+            <div
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-emerald-50 text-emerald-800 border-emerald-200 cursor-pointer hover:bg-emerald-100/70 transition-colors"
+              onClick={onRefreshHealth}
+              title="Gateway is operational and ready for scans. Click to refresh telemetry."
+            >
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <Wifi className="w-3.5 h-3.5 text-emerald-600" />
               <span>
@@ -78,32 +86,44 @@ export default function HospitalHeader({
             </div>
           ) : isInitializing ? (
             <div
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-amber-50 text-amber-800 border-amber-200"
-              title="Backend server is connected. Model weights are downloading and initializing in memory."
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-amber-50 text-amber-800 border-amber-200 cursor-pointer hover:bg-amber-100/70 transition-colors"
+              onClick={onRefreshHealth}
+              title="Backend server is warming up from hibernation. Click to refresh status."
             >
               <Loader2 className="w-3.5 h-3.5 text-amber-600 animate-spin" />
               <span>
-                {STRINGS.header.telemetryServerLabel}: Initializing Models...
+                {STRINGS.header.telemetryServerLabel}: Waking Up...
                 {healthInfo.latencyMs !== undefined && ` (${healthInfo.latencyMs}ms)`}
               </span>
             </div>
           ) : isError ? (
             <div
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-rose-50 text-rose-800 border-rose-200"
-              title={healthInfo.initError || "Model initialization failed on server"}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-rose-50 text-rose-800 border-rose-200 cursor-pointer hover:bg-rose-100 transition-colors"
+              onClick={onRefreshHealth}
+              title={healthInfo.initError || "Click to retry connection"}
             >
               <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
               <span>
-                {STRINGS.header.telemetryServerLabel}: Engine Error
+                {STRINGS.header.telemetryServerLabel}: Error (Retry)
               </span>
             </div>
           ) : (
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-rose-50 text-rose-800 border-rose-200">
-              <WifiOff className="w-3.5 h-3.5 text-rose-600" />
+            <button
+              type="button"
+              onClick={onRefreshHealth}
+              disabled={isRefreshingHealth}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100/80 transition-all cursor-pointer"
+              title="Inference Gateway in standby (Render spins down after 15m idle). Click to wake server."
+            >
+              {isRefreshingHealth ? (
+                <Loader2 className="w-3.5 h-3.5 text-rose-600 animate-spin" />
+              ) : (
+                <WifiOff className="w-3.5 h-3.5 text-rose-600" />
+              )}
               <span>
-                {STRINGS.header.telemetryServerLabel}: {STRINGS.header.offlineStatus}
+                {isRefreshingHealth ? "Connecting..." : `${STRINGS.header.telemetryServerLabel}: Standby (Click to Wake)`}
               </span>
-            </div>
+            </button>
           )}
 
           {/* PACS Routing Gateway Node */}

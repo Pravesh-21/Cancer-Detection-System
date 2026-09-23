@@ -135,6 +135,11 @@ class ModelEngine:
         weight_path = folder / "best_child_model.pt"
         classes_path = folder / "class_names.json"
 
+        if not weight_path.exists():
+            from download_models import download_child_model
+            print(f"Weights missing for {domain}. Fetching on-demand...")
+            download_child_model(domain)
+
         if not weight_path.exists() or not classes_path.exists():
             print(f"Warning: Model weights missing for {domain} at {folder}")
             return None
