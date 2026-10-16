@@ -94,6 +94,8 @@ class ModelEngine:
         if cls._instance is None:
             cls._instance = super(ModelEngine, cls).__new__(cls)
             cls._instance.initialized = False
+            cls._instance.child_models = {}
+            cls._instance.parent_classes = ["bone", "brain", "breast", "lung", "skin"]
         return cls._instance
 
     def initialize(self):

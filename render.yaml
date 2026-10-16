@@ -31,6 +31,18 @@ services:
       - key: SKIP_MODEL_DOWNLOAD
         value: "false"
 
+      # ONNX model Drive files (bare ID or full share link both work)
+      - key: GDRIVE_PARENT_MODEL_ROUTER_ONNX
+        value: "1Q50tPSYmtkN5ytYb4VExPSIPyqAmZ4O-"
+      - key: GDRIVE_BRAIN_MODEL_ONNX
+        value: "12YIQGVnvEWHrzligj4RwwI7o2pkP8QmP"
+      - key: GDRIVE_LUNG_MODEL_ONNX
+        value: "108hSZ0YvuuN3j3gulhUHCMjHmPos6hAk"
+      - key: GDRIVE_BREAST_MODEL_ONNX
+        value: "165M-Q2a3EdxAjzh8heqXDgLVtaAYNI8m"
+      - key: GDRIVE_BONE_MODEL_ONNX
+        value: "1DjOSChB0AK2gPcxVjjV25w1ur2sgUczN"
+
       # Extra CORS origins beyond Vercel + localhost (comma-separated, optional)
       - key: RENDER_ALLOWED_ORIGINS
         value: ""

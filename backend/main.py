@@ -123,8 +123,8 @@ def health_check():
         "models_initialized": _models_ready,
         "init_error": _init_error,
         "available_domains": ["brain", "lung", "breast", "bone", "skin"],
-        "cached_domains": list(engine.child_models.keys()),
-        "router_classes": getattr(engine, "parent_classes", []),
+        "cached_domains": list(getattr(engine, "child_models", {}).keys()),
+        "router_classes": getattr(engine, "parent_classes", ["bone", "brain", "breast", "lung", "skin"]),
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "modelVersion": TENANT_CONFIG["modelVersion"],
         "facilityCode": TENANT_CONFIG["facilityCode"],
@@ -135,7 +135,7 @@ def health_check():
 def get_tenant_config():
     return TenantConfigResponse(
         **TENANT_CONFIG,
-        availableDomains=list(engine.child_models.keys()) if _models_ready else [],
+        availableDomains=list(getattr(engine, "child_models", {}).keys()) if _models_ready else [],
     )
 
 
