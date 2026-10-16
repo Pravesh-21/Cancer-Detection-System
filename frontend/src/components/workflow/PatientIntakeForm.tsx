@@ -15,8 +15,8 @@ const patientSchema = z.object({
   fullName:    z.string().min(2, "Full name must be at least 2 characters"),
   age:         z.coerce.number().int().min(1, "Age must be at least 1").max(130, "Age must be at most 130"),
   dateOfBirth: z.string().min(1, "Date of birth is required"),
-  sex:         z.enum(["male", "female", "other"], { required_error: "Sex is required" }),
-  bloodGroup:  z.enum(["A+", "A−", "B+", "B−", "AB+", "AB−", "O+", "O−"], { required_error: "Blood group is required" }),
+  sex:         z.enum(["male", "female", "other"], { message: "Sex is required" }),
+  bloodGroup:  z.enum(["A+", "A−", "B+", "B−", "AB+", "AB−", "O+", "O−"], { message: "Blood group is required" }),
   weight:      z.coerce.number().min(1, "Weight must be greater than 0").max(500),
   mrn:         z.string().min(3, "MRN must be at least 3 characters"),
   phone:       z.string().min(7, "Phone number is too short"),
@@ -35,7 +35,7 @@ interface FieldProps {
   label: string;
   error?: string;
   required?: boolean;
-  icon?: React.ElementType;
+  icon?: React.ComponentType<{ className?: string }>;
   children: React.ReactNode;
 }
 
@@ -79,7 +79,7 @@ export default function PatientIntakeForm({ defaultValues, onSubmit }: PatientIn
     handleSubmit,
     formState: { errors, isValid },
   } = useForm<PatientFormData>({
-    resolver: zodResolver(patientSchema),
+    resolver: zodResolver(patientSchema) as any,
     defaultValues,
     mode: "onChange",
   });

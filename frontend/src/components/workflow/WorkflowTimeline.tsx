@@ -8,7 +8,7 @@ export type WorkflowStep = 1 | 2 | 3 | 4;
 
 interface StepConfig {
   id: WorkflowStep;
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   title: string;
   subtitle: string;
 }
