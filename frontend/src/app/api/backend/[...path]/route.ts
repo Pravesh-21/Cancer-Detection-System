@@ -42,6 +42,10 @@ async function forward(req: NextRequest, { params }: { params: Promise<{ path: s
           headers.set(key, val);
         }
       });
+      // Server-side secret for patient-registry endpoints; never exposed to the browser
+      if (process.env.PATIENT_API_KEY) {
+        headers.set("x-api-key", process.env.PATIENT_API_KEY);
+      }
 
       const res = await fetch(targetUrl, {
         method: req.method,

@@ -6,3 +6,6 @@ numpy==1.26.4
 onnxruntime>=1.18.0
 pydantic==2.9.2
 gdown==5.2.0
+pymongo==4.10.1
+cryptography==43.0.3
+python-dotenv==1.0.1

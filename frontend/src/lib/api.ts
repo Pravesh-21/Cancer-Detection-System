@@ -4,7 +4,10 @@ import type {
   Domain,
   AuditLogEntry,
   BackendHealthInfo,
+  PatientVisitRegistration,
+  PatientLookupResult,
 } from "./types";
+import type { PatientFormData } from "@/components/workflow/PatientIntakeForm";
 import { DEFAULT_TENANT, type TenantBranding } from "@/config/tenant";
 
 // In browser, always route through same-origin reverse proxy /api/backend to prevent backend exposure
@@ -101,10 +104,96 @@ export async function recordClientAuditLog(entry: Omit<AuditLogEntry, "id" | "ti
   }
 }
 
+// ─── Patient Registry ────────────────────────────────────────────────────────
+
+/** Opens a visit for the patient (creating them on first visit). Returns null if the registry is offline. */
+export async function registerPatientVisit(data: PatientFormData): Promise<PatientVisitRegistration | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/patients/intake`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Finds a returning patient by MRN. Returns null if not found or the registry is offline. */
+export async function lookupPatientByMrn(mrn: string): Promise<PatientLookupResult | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/patients/lookup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mrn }),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function signOffVisit(visitCode: string, notes: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/visits/${encodeURIComponent(visitCode)}/signoff`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** E-mails the signed-off report to the patient's address on record. Throws with a readable message on failure. */
+export async function sendReportEmail(visitCode: string): Promise<{ sent: boolean; recipient: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/visits/${encodeURIComponent(visitCode)}/send-report`, { method: "POST" });
+  } catch {
+    throw new Error("Could not reach the server. Please check your connection and retry.");
+  }
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = (await res.json()).detail || "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || "The report could not be sent. Please retry.");
+  }
+  return await res.json();
+}
+
+/** Builds a WhatsApp click-to-chat link (notification only) for the patient's number on record. */
+export async function getWhatsAppLink(visitCode: string): Promise<{ url: string; recipient: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/visits/${encodeURIComponent(visitCode)}/whatsapp-link`, { method: "POST" });
+  } catch {
+    throw new Error("Could not reach the server. Please check your connection and retry.");
+  }
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = (await res.json()).detail || "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || "Could not prepare the WhatsApp message. Please retry.");
+  }
+  return await res.json();
+}
+
 export async function runApiDiagnosis(
   imageSource: File | Blob | string,
   fileName: string = "scan.jpg",
-  domainOverride?: Domain
+  domainOverride?: Domain,
+  visitCode?: string
 ): Promise<DiagnosisApiResponse> {
   let fileToUpload: File | Blob;
 
@@ -120,6 +209,9 @@ export async function runApiDiagnosis(
   formData.append("file", fileToUpload, fileName);
   if (domainOverride) {
     formData.append("domain_override", domainOverride);
+  }
+  if (visitCode) {
+    formData.append("visit_code", visitCode);
   }
 
   const res = await fetch(`${API_BASE_URL}/api/diagnose`, {

@@ -24,6 +24,9 @@ import {
   fetchTenantConfig,
   fetchAuditLogs,
   recordClientAuditLog,
+  registerPatientVisit,
+  lookupPatientByMrn,
+  signOffVisit,
 } from "@/lib/api";
 import type {
   ClinicalSessionResult,
@@ -34,6 +37,7 @@ import type {
   AuditLogEntry,
   BackendHealthInfo,
   ClinicalPriority,
+  PatientVisitRegistration,
 } from "@/lib/types";
 import { DEFAULT_TENANT, type TenantBranding } from "@/config/tenant";
 import { STRINGS } from "@/config/strings";
@@ -53,6 +57,7 @@ export default function DiagnosticWorkspacePage() {
   const [completedSteps, setCompletedSteps] = useState<Set<WorkflowStep>>(new Set());
   const [patientData, setPatientData] = useState<PatientFormData | null>(null);
   const [doctorNotes, setDoctorNotes] = useState<string>("");
+  const [visit, setVisit] = useState<PatientVisitRegistration | null>(null);
 
   // ── Scan / AI State ──────────────────────────────────────────────────────
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -120,11 +125,21 @@ export default function DiagnosticWorkspacePage() {
   }, []);
 
   // ── Step 1: Patient Intake Submit ────────────────────────────────────────
-  const handlePatientSubmit = useCallback((data: PatientFormData) => {
+  const handlePatientSubmit = useCallback(async (data: PatientFormData) => {
     setPatientData(data);
     markStepComplete(1);
     setCurrentStep(2);
-    addAuditEvent("PATIENT_INTAKE", `Patient ${data.fullName} (MRN: ${data.mrn}) registered for diagnostic session.`);
+    const registration = await registerPatientVisit(data);
+    setVisit(registration);
+    // Audit entries reference the non-identifying patient code, never name/MRN
+    if (registration) {
+      addAuditEvent(
+        "PATIENT_INTAKE",
+        `${registration.patientCode} ${registration.isReturning ? `returning (visit #${registration.visitNumber})` : "registered"} — visit ${registration.visitCode}.`
+      );
+    } else {
+      addAuditEvent("PATIENT_INTAKE", "Patient intake completed; registry offline — visit not persisted.", "WARNING");
+    }
   }, [markStepComplete, addAuditEvent]);
 
   // ── Step 2: File Ingestion ────────────────────────────────────────────────
@@ -166,7 +181,7 @@ export default function DiagnosticWorkspacePage() {
     setInferenceStatus("loading");
     setErrorMessage(null);
     try {
-      const response = await runApiDiagnosis(uploadedFile, uploadedFile.name);
+      const response = await runApiDiagnosis(uploadedFile, uploadedFile.name, undefined, visit?.visitCode);
       setResult(response.sessionResult);
       setDicom(response.dicomMetadata);
       setInferenceStatus("complete");
@@ -184,7 +199,7 @@ export default function DiagnosticWorkspacePage() {
       setErrorMessage(message);
       addAuditEvent("INFERENCE_ERROR", `Pipeline error: ${message}`, "WARNING");
     }
-  }, [uploadedFile, addAuditEvent, markStepComplete]);
+  }, [uploadedFile, addAuditEvent, markStepComplete, visit]);
 
   // ── Domain Override ───────────────────────────────────────────────────────
   const handleDomainOverride = useCallback(async (domain: Domain) => {
@@ -193,7 +208,7 @@ export default function DiagnosticWorkspacePage() {
     setInferenceStatus("loading");
     setErrorMessage(null);
     try {
-      const response = await runApiDiagnosis(uploadedFile, uploadedFile.name, domain);
+      const response = await runApiDiagnosis(uploadedFile, uploadedFile.name, domain, visit?.visitCode);
       setResult(response.sessionResult);
       setDicom(response.dicomMetadata);
       setInferenceStatus("complete");
@@ -204,7 +219,7 @@ export default function DiagnosticWorkspacePage() {
       setInferenceStatus("error");
       setErrorMessage(message);
     }
-  }, [uploadedFile, addAuditEvent]);
+  }, [uploadedFile, addAuditEvent, visit]);
 
   // ── Export JSON ───────────────────────────────────────────────────────────
   const handleExportMetrics = useCallback(() => {
@@ -230,12 +245,17 @@ export default function DiagnosticWorkspacePage() {
   }, [result, addAuditEvent]);
 
   // ── Step 3: Doctor Sign-off ───────────────────────────────────────────────
-  const handleDoctorSignOff = useCallback((notes: string) => {
+  const handleDoctorSignOff = useCallback(async (notes: string) => {
     setDoctorNotes(notes);
+    // Persist before step 4 so "Send report" never races an unsaved sign-off
+    if (visit && !(await signOffVisit(visit.visitCode, notes))) {
+      addAuditEvent("SIGNOFF_NOT_PERSISTED", `Sign-off for ${visit.visitCode} could not be saved to the registry.`, "WARNING");
+    }
     markStepComplete(3);
     setCurrentStep(4);
-    addAuditEvent("DOCTOR_SIGNOFF", `Attending physician signed off on case${result ? ` ${result.sessionId}` : ""}. Notes: ${notes || "(none)"}`);
-  }, [markStepComplete, addAuditEvent, result]);
+    // Notes are stored encrypted in the registry; keep them out of the plaintext audit trail
+    addAuditEvent("DOCTOR_SIGNOFF", `Attending physician signed off on case${result ? ` ${result.sessionId}` : ""}${notes ? " with notes" : ""}.`);
+  }, [markStepComplete, addAuditEvent, result, visit]);
 
   // ── Step 4: New Case Reset ─────────────────────────────────────────────────
   const handleNewCase = useCallback(() => {
@@ -243,6 +263,7 @@ export default function DiagnosticWorkspacePage() {
     setCompletedSteps(new Set());
     setPatientData(null);
     setDoctorNotes("");
+    setVisit(null);
     setUploadedFile(null);
     setPreviewUrl(null);
     setUploadedFileName(null);
@@ -290,6 +311,7 @@ export default function DiagnosticWorkspacePage() {
           <PatientIntakeForm
             defaultValues={patientData ?? undefined}
             onSubmit={handlePatientSubmit}
+            onLookupMrn={lookupPatientByMrn}
           />
         )}
 
@@ -313,6 +335,22 @@ export default function DiagnosticWorkspacePage() {
                 <span className="text-[12px] text-[#3C566E]">Blood: <strong className="font-mono">{patientData.bloodGroup}</strong></span>
                 <span className="text-[#DCE8F0]">|</span>
                 <span className="text-[12px] font-mono text-[#0F74C9] font-bold">{patientData.mrn}</span>
+                {visit && (
+                  <>
+                    <span className="text-[#DCE8F0]">|</span>
+                    <span className="text-[12px] font-mono text-[#3C566E]">{visit.patientCode}</span>
+                    <span
+                      className={cn(
+                        "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-[6px] border",
+                        visit.isReturning
+                          ? "bg-[#FEF9EE] text-[#C98A0A] border-[#FBE3B5]"
+                          : "bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]"
+                      )}
+                    >
+                      {visit.isReturning ? `Returning · Visit #${visit.visitNumber}` : "New patient"}
+                    </span>
+                  </>
+                )}
               </div>
             )}
 
@@ -469,8 +507,11 @@ export default function DiagnosticWorkspacePage() {
             patient={patientData}
             result={result}
             doctorNotes={doctorNotes}
+            visitCode={visit?.visitCode}
             onBack={() => setCurrentStep(3)}
             onNewCase={handleNewCase}
+            onReportSent={() => addAuditEvent("REPORT_EMAILED", `Report for ${visit?.patientCode ?? "patient"} e-mailed (visit ${visit?.visitCode}).`)}
+            onWhatsAppOpened={() => addAuditEvent("WHATSAPP_NOTIFICATION_OPENED", `WhatsApp notification opened for ${visit?.patientCode ?? "patient"} (visit ${visit?.visitCode}).`, "INFO")}
           />
         )}
 

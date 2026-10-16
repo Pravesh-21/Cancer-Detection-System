@@ -261,30 +261,8 @@ class ModelEngine:
 
         child_info = self.get_or_load_child_model(domain)
         if not child_info:
-            classes_path = MODELS_DIR / f"Child_{domain.capitalize()}_Cancer_Processed" / "class_names.json"
-            try:
-                import json as _json
-                fallback_classes = _json.loads(classes_path.read_text())
-            except Exception:
-                fallback_classes = ["mel", "nv", "bcc", "akiec"]
-
-            n = len(fallback_classes)
-            uniform_p = round(1.0 / n, 4)
-            dummy_probs = [
-                {
-                    "className": c,
-                    "displayName": CLASS_DISPLAY_NAMES.get(c, c.capitalize()),
-                    "probability": uniform_p,
-                    "riskLevel": get_risk_level(c),
-                }
-                for c in fallback_classes
-            ]
-            top_class = fallback_classes[0]
-            top_display = CLASS_DISPLAY_NAMES.get(top_class, top_class.capitalize())
-            top_risk = get_risk_level(top_class)
-            latency_ms = (time.perf_counter() - start_time) * 1000
-            print(f"[WARN] No child model weights for domain '{domain}'. Returning uniform uncertainty distribution.")
-            return top_class, top_display, top_risk, uniform_p, round(latency_ms, 1), dummy_probs
+            # Never fabricate a finding when the domain's weights are unavailable
+            raise RuntimeError(f"Pathology model for domain '{domain}' could not be loaded")
 
         model_type, model_obj, class_names = child_info
 

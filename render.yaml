@@ -43,6 +43,34 @@ services:
       - key: GDRIVE_BONE_MODEL_ONNX
         value: "1DjOSChB0AK2gPcxVjjV25w1ur2sgUczN"
 
+      # Patient registry (MongoDB) — secrets are entered in the Render dashboard, never committed
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: "cancerlens"
+      - key: PATIENT_DATA_KEY      # generate: python manage_patients.py genkey — back it up!
+        sync: false
+      - key: PATIENT_API_KEY       # same value must be set on Vercel (server-side only)
+        sync: false
+
+      # Patient report e-mails (Brevo) — sender must be verified in Brevo
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: BREVO_SENDER_NAME
+        value: "CancerLens"
+
+      # Patient scan images → Google Drive, one sub-folder per patient (run backend/drive_auth.py once)
+      - key: PATIENT_IMAGES_FOLDER_ID
+        value: "17NarJWbC29SH3p1q4vj5GuII5iChd8KA"
+      - key: GDRIVE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GDRIVE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GDRIVE_OAUTH_REFRESH_TOKEN
+        sync: false
+
       # Extra CORS origins beyond Vercel + localhost (comma-separated, optional)
       - key: RENDER_ALLOWED_ORIGINS
         value: ""

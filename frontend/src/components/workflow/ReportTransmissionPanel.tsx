@@ -3,18 +3,23 @@
 import React, { useState } from "react";
 import {
   Mail, CheckCircle2, Loader2, RefreshCw, ArrowLeft, Send,
-  FileText, User, Phone, Shield
+  FileText, User, Phone, Shield, MessageCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ClinicalSessionResult } from "@/lib/types";
 import type { PatientFormData } from "./PatientIntakeForm";
+import { sendReportEmail, getWhatsAppLink } from "@/lib/api";
 
 interface ReportTransmissionPanelProps {
   patient: PatientFormData;
   result: ClinicalSessionResult;
   doctorNotes: string;
+  /** Registry visit code; without it the report cannot be e-mailed */
+  visitCode?: string;
   onBack: () => void;
   onNewCase: () => void;
+  onReportSent?: (recipient: string) => void;
+  onWhatsAppOpened?: (recipient: string) => void;
 }
 
 type TransmitStatus = "idle" | "sending" | "sent" | "error";
@@ -23,22 +28,67 @@ export default function ReportTransmissionPanel({
   patient,
   result,
   doctorNotes,
+  visitCode,
   onBack,
   onNewCase,
+  onReportSent,
+  onWhatsAppOpened,
 }: ReportTransmissionPanelProps) {
+  const [waStatus, setWaStatus] = useState<"idle" | "opening" | "opened">("idle");
+  const [waRecipient, setWaRecipient] = useState<string | null>(null);
   const [transmitStatus, setTransmitStatus] = useState<TransmitStatus>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [recipient, setRecipient] = useState<string>(patient.email);
 
   const finding = result.diagnosticFinding;
   const domain = result.domainClassification;
 
   const handleSendReport = async () => {
+    if (!visitCode) {
+      setTransmitStatus("error");
+      setErrorMsg("This visit was not saved to the patient registry, so the report cannot be e-mailed.");
+      return;
+    }
     setTransmitStatus("sending");
     setErrorMsg(null);
-    // Simulate email dispatch (3s delay)
-    await new Promise((res) => setTimeout(res, 3000));
-    // In production, call: await sendPatientReport(patient, result, doctorNotes);
-    setTransmitStatus("sent");
+    try {
+      const res = await sendReportEmail(visitCode);
+      setRecipient(res.recipient);
+      setTransmitStatus("sent");
+      onReportSent?.(res.recipient);
+    } catch (err) {
+      setTransmitStatus("error");
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleWhatsApp = async () => {
+    if (!visitCode) {
+      setTransmitStatus("error");
+      setErrorMsg("This visit was not saved to the patient registry, so a WhatsApp message cannot be prepared.");
+      return;
+    }
+    // Open the tab synchronously inside the click, or pop-up blockers stop it after the await
+    const win = window.open("about:blank", "_blank");
+    setWaStatus("opening");
+    setErrorMsg(null);
+    try {
+      const res = await getWhatsAppLink(visitCode);
+      if (win) {
+        win.opener = null;
+        win.location.href = res.url;
+      } else {
+        window.location.href = res.url;
+      }
+      setWaRecipient(res.recipient);
+      setWaStatus("opened");
+      onWhatsAppOpened?.(res.recipient);
+    } catch (err) {
+      win?.close();
+      setWaStatus("idle");
+      setTransmitStatus("error");
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+    }
   };
 
   return (
@@ -136,7 +186,7 @@ export default function ReportTransmissionPanel({
           <div className="flex items-start gap-2.5 p-3.5 rounded-[12px] bg-[#FFFBEB] border border-[#FDE68A]">
             <Shield className="w-4 h-4 text-[#C98A0A] flex-shrink-0 mt-0.5" />
             <p className="text-[11px] text-[#7A5C00] leading-relaxed">
-              <strong>Research Prototype Notice:</strong> This is a simulated report transmission for demonstration purposes. No actual email or data is transmitted. This system does not store or transmit patient health information.
+              <strong>Confidentiality Notice:</strong> A real e-mail containing the finding and doctor&apos;s notes will be sent to the address on the patient&apos;s record. The subject line contains no diagnosis. Confirm the address with the patient before sending.
             </p>
           </div>
 
@@ -149,13 +199,23 @@ export default function ReportTransmissionPanel({
               <div className="text-center">
                 <p className="text-[16px] font-bold text-[#0B2239]">Report Dispatched!</p>
                 <p className="text-[13px] text-[#3C566E] mt-1">
-                  A clinical summary has been (simulated) sent to{" "}
-                  <strong className="text-[#0F74C9]">{patient.email}</strong>
+                  A clinical summary has been e-mailed to{" "}
+                  <strong className="text-[#0F74C9]">{recipient}</strong>
                 </p>
                 <p className="text-[11px] text-[#7A91A6] mt-1">
                   Case ID: <span className="font-mono">{result.sessionId}</span>
                 </p>
               </div>
+            </div>
+          )}
+
+          {waStatus === "opened" && waRecipient && (
+            <div className="flex items-start gap-2.5 p-3.5 rounded-[12px] bg-[#ECFDF5] border border-[#A7F3D0] text-[12px] text-[#065F46]">
+              <MessageCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <p>
+                WhatsApp opened for <strong>{waRecipient}</strong> with a notification message (no diagnosis).
+                Press <strong>Send</strong> in WhatsApp to deliver it.
+              </p>
             </div>
           )}
 
@@ -178,7 +238,17 @@ export default function ReportTransmissionPanel({
             Back to Review
           </button>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            <button
+              type="button"
+              id="send-whatsapp-btn"
+              onClick={handleWhatsApp}
+              disabled={waStatus === "opening" || transmitStatus === "sending"}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-[10px] border border-[#A7F3D0] text-[13px] font-semibold text-[#047857] bg-[#ECFDF5] hover:bg-[#D1FAE5] transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {waStatus === "opening" ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
+              {waStatus === "opened" ? "Open WhatsApp Again" : "Notify on WhatsApp"}
+            </button>
             {transmitStatus === "sent" && (
               <button
                 type="button"

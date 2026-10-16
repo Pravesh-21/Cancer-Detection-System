@@ -105,6 +105,43 @@ export interface AuditLogEntry {
   status: "SUCCESS" | "WARNING" | "INFO";
 }
 
+// ─── Patient Registry ────────────────────────────────────────────────────────
+
+export interface PatientVisitSummary {
+  visitCode: string;
+  date: string | null;
+  status: "registered" | "analyzed" | "signed_off";
+  domain?: Domain | null;
+  finding?: string | null;
+  riskLevel?: RiskLevel | null;
+  confidence?: number | null;
+}
+
+export interface PatientVisitRegistration {
+  patientCode: string;
+  visitCode: string;
+  visitNumber: number;
+  isReturning: boolean;
+  previousVisits: PatientVisitSummary[];
+}
+
+export interface PatientLookupResult {
+  patientCode: string;
+  visitCount: number;
+  lastVisitAt: string | null;
+  profile: {
+    fullName: string;
+    mrn: string;
+    dateOfBirth: string;
+    phone: string;
+    email: string;
+    sex: "male" | "female" | "other";
+    bloodGroup: string;
+    weight?: number | null;
+  };
+  previousVisits: PatientVisitSummary[];
+}
+
 // ─── Backend Health / Config Information ────────────────────────────────────
 
 export interface BackendHealthInfo {

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -9,6 +9,7 @@ import {
   Hash, ChevronRight, AlertCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { PatientLookupResult } from "@/lib/types";
 
 // ── Validation Schema ──────────────────────────────────────────────────────────
 const patientSchema = z.object({
@@ -28,6 +29,8 @@ export type PatientFormData = z.infer<typeof patientSchema>;
 interface PatientIntakeFormProps {
   defaultValues?: Partial<PatientFormData>;
   onSubmit: (data: PatientFormData) => void;
+  /** Optional returning-patient lookup, triggered when the MRN field loses focus */
+  onLookupMrn?: (mrn: string) => Promise<PatientLookupResult | null>;
 }
 
 // ── Field wrapper ──────────────────────────────────────────────────────────────
@@ -73,16 +76,61 @@ const selectCls = (hasError: boolean) => cn(
 );
 
 // ── Component ──────────────────────────────────────────────────────────────────
-export default function PatientIntakeForm({ defaultValues, onSubmit }: PatientIntakeFormProps) {
+function ageFromDob(dob: string): number | undefined {
+  const d = new Date(dob);
+  if (isNaN(d.getTime())) return undefined;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--;
+  return age;
+}
+
+export default function PatientIntakeForm({ defaultValues, onSubmit, onLookupMrn }: PatientIntakeFormProps) {
   const {
     register,
     handleSubmit,
+    reset,
+    getValues,
     formState: { errors, isValid },
   } = useForm<PatientFormData>({
     resolver: zodResolver(patientSchema) as any,
     defaultValues,
     mode: "onChange",
   });
+
+  const [match, setMatch] = useState<PatientLookupResult | null>(null);
+  const [lookupState, setLookupState] = useState<"idle" | "searching" | "none">("idle");
+  const [lastLookup, setLastLookup] = useState<string>("");
+
+  const handleMrnBlur = async (e: React.FocusEvent<HTMLInputElement>) => {
+    const mrn = e.target.value.trim();
+    if (!onLookupMrn || mrn.length < 3 || mrn === lastLookup) return;
+    setLastLookup(mrn);
+    setLookupState("searching");
+    const found = await onLookupMrn(mrn);
+    setMatch(found);
+    setLookupState(found ? "idle" : "none");
+  };
+
+  const applySavedDetails = () => {
+    if (!match) return;
+    const p = match.profile;
+    reset(
+      {
+        ...getValues(),
+        fullName: p.fullName,
+        mrn: p.mrn,
+        dateOfBirth: p.dateOfBirth,
+        age: ageFromDob(p.dateOfBirth) ?? getValues("age"),
+        sex: p.sex,
+        bloodGroup: p.bloodGroup as PatientFormData["bloodGroup"],
+        weight: p.weight ?? getValues("weight"),
+        phone: p.phone,
+        email: p.email,
+      },
+      { keepDefaultValues: true }
+    );
+  };
 
   return (
     <div className="bg-white border border-[#DCE8F0] rounded-[16px] shadow-[0_1px_3px_rgba(11,34,57,0.04),0_4px_12px_rgba(11,34,57,0.03)] overflow-hidden animate-fade-rise">
@@ -120,13 +168,50 @@ export default function PatientIntakeForm({ defaultValues, onSubmit }: PatientIn
           </Field>
           <Field label="Medical Record No." required icon={Hash} error={errors.mrn?.message}>
             <input
-              {...register("mrn")}
+              {...register("mrn", { onBlur: handleMrnBlur })}
               type="text"
               placeholder="e.g. MRN-00892341"
               className={inputCls(!!errors.mrn)}
             />
           </Field>
         </div>
+
+        {/* Returning-patient lookup result */}
+        {lookupState === "searching" && (
+          <p className="text-[12px] text-[#7A91A6] font-medium">Checking patient registry…</p>
+        )}
+        {lookupState === "none" && (
+          <p className="text-[12px] text-[#7A91A6] font-medium">No prior record for this MRN — a new patient record will be created.</p>
+        )}
+        {match && (
+          <div className="rounded-[12px] border border-[#FBE3B5] bg-[#FEF9EE] px-4 py-3 space-y-2">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-[13px] font-bold text-[#0B2239]">
+                Returning patient · {match.patientCode} · {match.visitCount} previous visit{match.visitCount === 1 ? "" : "s"}
+                {match.lastVisitAt && (
+                  <span className="font-medium text-[#3C566E]"> · last seen {new Date(match.lastVisitAt).toLocaleDateString()}</span>
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={applySavedDetails}
+                className="text-[12px] font-bold px-3 py-1.5 rounded-[8px] bg-[#0F74C9] text-white cursor-pointer hover:bg-[#0B5FA5]"
+              >
+                Load saved details
+              </button>
+            </div>
+            {match.previousVisits.length > 0 && (
+              <ul className="text-[12px] text-[#3C566E] space-y-0.5">
+                {match.previousVisits.slice(0, 3).map((v) => (
+                  <li key={v.visitCode} className="font-mono">
+                    {v.date ? new Date(v.date).toLocaleDateString() : "—"} · {v.domain?.toUpperCase() ?? "—"} · {v.finding ?? "not analyzed"}
+                    {v.status === "signed_off" ? " · signed off" : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {/* Row 2: Age + DOB + Sex */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">

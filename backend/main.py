@@ -7,7 +7,15 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Optional, List
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+import hashlib
+import hmac
+
+from dotenv import load_dotenv
+
+# Local dev reads backend/.env; on Render the dashboard env vars are used (no .env is deployed)
+load_dotenv()
+
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Header, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 
@@ -19,12 +27,23 @@ from schemas import (
     DicomMetadata,
     AuditLogEntry,
     TenantConfigResponse,
+    PatientIntakeRequest,
+    PatientLookupRequest,
+    VisitSignOffRequest,
 )
 from model_loader import ModelEngine
 from download_models import download_models
+import drive_store
+import mailer
+import patient_store
+import whatsapp
+from patient_store import PatientStoreUnavailable
 
 engine = ModelEngine()
 _models_ready = False
+
+# Domains with a trained child classifier (skin is routed but has no pathology model yet)
+SUPPORTED_PATHOLOGY_DOMAINS = ["brain", "lung", "breast", "bone"]
 
 TENANT_CONFIG = {
     "hospitalName": "Metropolitan Radiologic Health Network",
@@ -83,6 +102,7 @@ async def lifespan(app: FastAPI):
     except RuntimeError:
         loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _sync_init)
+    loop.run_in_executor(None, patient_store.init_store)
     yield
 
 
@@ -122,12 +142,15 @@ def health_check():
         "status": status,
         "models_initialized": _models_ready,
         "init_error": _init_error,
-        "available_domains": ["brain", "lung", "breast", "bone", "skin"],
+        "available_domains": SUPPORTED_PATHOLOGY_DOMAINS,
         "cached_domains": list(getattr(engine, "child_models", {}).keys()),
         "router_classes": getattr(engine, "parent_classes", ["bone", "brain", "breast", "lung", "skin"]),
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "modelVersion": TENANT_CONFIG["modelVersion"],
         "facilityCode": TENANT_CONFIG["facilityCode"],
+        "patient_db": patient_store.store_status(),
+        "email": mailer.mailer_status(),
+        "image_archive": drive_store.drive_status(),
     }
 
 
@@ -152,8 +175,10 @@ def record_audit_log(entry: AuditLogEntry):
 
 @app.post("/api/diagnose", response_model=DiagnosisResponse)
 async def diagnose_image(
+    background: BackgroundTasks,
     file: UploadFile = File(...),
     domain_override: Optional[str] = Form(None),
+    visit_code: Optional[str] = Form(None),
 ):
     if not _models_ready:
         if _init_error:
@@ -185,6 +210,14 @@ async def diagnose_image(
     target_domain = predicted_domain
     if domain_override and domain_override.lower() in ["brain", "lung", "breast", "bone", "skin"]:
         target_domain = domain_override.lower()
+
+    if target_domain not in SUPPORTED_PATHOLOGY_DOMAINS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Scan identified as {target_domain.upper()} ({domain_conf*100:.1f}% confidence). "
+                   f"Pathology analysis for this domain is not yet available. "
+                   f"Supported: {', '.join(d.upper() for d in SUPPORTED_PATHOLOGY_DOMAINS)}.",
+        )
 
     try:
         top_class, display_name, risk_level, child_conf, child_latency, class_probs = engine.predict_child(
@@ -258,7 +291,186 @@ async def diagnose_image(
         ),
     )
 
+    if visit_code:
+        # Best-effort: a registry outage must never block the clinical result
+        try:
+            patient_store.get_store().record_diagnosis(
+                visit_code,
+                finding={
+                    "session_id": session_id,
+                    "domain": target_domain,
+                    "domain_override": target_domain != predicted_domain,
+                    "domain_confidence": domain_conf,
+                    "predicted_class": top_class,
+                    "display_name": display_name,
+                    "risk_level": risk_level,
+                    "confidence": child_conf,
+                    "class_probabilities": [
+                        {"class_name": c["className"], "probability": c["probability"]} for c in class_probs
+                    ],
+                    "model_version": TENANT_CONFIG["modelVersion"],
+                    "pipeline_ms": round(total_pipeline_ms, 1),
+                },
+                scan={
+                    "file_name": file.filename,
+                    "sha256": hashlib.sha256(contents).hexdigest(),
+                    "size_bytes": len(contents),
+                    "content_type": file.content_type,
+                },
+            )
+        except Exception as e:
+            print(f"[patient_store] Could not record diagnosis for visit: {type(e).__name__}")
+
+        if drive_store.drive_status() == "configured":
+            background.add_task(_archive_scan_to_drive, visit_code, contents, file.filename, file.content_type, target_domain)
+
     return DiagnosisResponse(
         sessionResult=session_result,
         dicomMetadata=dicom_meta,
     )
+
+
+def _archive_scan_to_drive(visit_code: str, data: bytes, file_name: str, content_type: Optional[str], domain: str):
+    """Runs after the response is sent: file the scan in the patient's Drive folder."""
+    try:
+        store = patient_store.get_store()
+        ctx = store.drive_context(visit_code)
+        if not ctx:
+            return
+        sha = hashlib.sha256(data).hexdigest()
+        if (ctx["scan_drive"] or {}).get("sha256") == sha:
+            return  # same image re-run (e.g. domain override) — already archived
+        folder_id = drive_store.ensure_patient_folder(ctx["patient_code"], ctx["patient_name"], ctx["drive_folder_id"])
+        if folder_id != ctx["drive_folder_id"]:
+            store.set_patient_drive_folder(ctx["patient_code"], folder_id)
+        ext = os.path.splitext(file_name or "")[1].lower() or ".jpg"
+        name = f"{visit_code}_{domain}_{datetime.utcnow():%Y%m%d-%H%M%S}{ext}"
+        info = drive_store.upload_image(folder_id, name, data, content_type or "application/octet-stream")
+        store.set_visit_scan_drive(visit_code, {**info, "file_name": name, "sha256": sha, "uploaded_at": datetime.utcnow()})
+        print(f"[drive] Archived scan for {ctx['patient_code']} / {visit_code}")
+    except Exception as e:
+        print(f"[drive] Scan archive failed for {visit_code}: {type(e).__name__}: {e}")
+
+
+# ── Patient Registry ─────────────────────────────────────────────────────────
+
+def require_registry_key(x_api_key: Optional[str] = Header(None)):
+    """If PATIENT_API_KEY is set, patient endpoints require it (injected server-side by the Next.js proxy)."""
+    expected = os.environ.get("PATIENT_API_KEY", "")
+    if expected and not hmac.compare_digest(x_api_key or "", expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _registry():
+    try:
+        return patient_store.get_store()
+    except PatientStoreUnavailable:
+        raise HTTPException(status_code=503, detail="Patient registry is unavailable. Diagnosis still works; records will not be saved.")
+
+
+@app.post("/api/patients/intake", dependencies=[Depends(require_registry_key)])
+def patient_intake(req: PatientIntakeRequest):
+    result = _registry().register_visit(req.model_dump())
+    audit_logs.insert(0, AuditLogEntry(
+        id=f"EVT-{uuid.uuid4().hex[:6].upper()}",
+        timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        actor="PATIENT_REGISTRY",
+        action="RETURNING_PATIENT_VISIT" if result["isReturning"] else "NEW_PATIENT_REGISTERED",
+        details=f"{result['patientCode']} opened visit {result['visitCode']} (visit #{result['visitNumber']}).",
+        status="SUCCESS",
+    ))
+    return result
+
+
+# POST (not GET) so the MRN never appears in URLs or access logs
+@app.post("/api/patients/lookup", dependencies=[Depends(require_registry_key)])
+def patient_lookup(req: PatientLookupRequest):
+    found = _registry().lookup_by_mrn(req.mrn)
+    if not found:
+        raise HTTPException(status_code=404, detail="No patient on record with this MRN")
+    return found
+
+
+@app.post("/api/visits/{visit_code}/signoff", dependencies=[Depends(require_registry_key)])
+def visit_signoff(visit_code: str, req: VisitSignOffRequest):
+    if not _registry().sign_off(visit_code, req.notes, req.signedBy):
+        raise HTTPException(status_code=404, detail="Visit not found")
+    return {"visitCode": visit_code, "status": "signed_off"}
+
+
+@app.post("/api/visits/{visit_code}/send-report", dependencies=[Depends(require_registry_key)])
+def visit_send_report(visit_code: str):
+    """E-mail the signed-off report to the patient's address on record (never taken from the client)."""
+    store = _registry()
+    ctx = store.report_context(visit_code)
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Visit not found")
+    if ctx["visit"].get("status") != "signed_off":
+        raise HTTPException(status_code=409, detail="Report can only be sent after the doctor has signed off")
+    if not ctx["email"]:
+        raise HTTPException(status_code=422, detail="No e-mail address on record for this patient")
+
+    mail = mailer.build_report_email(
+        patient_name=ctx["patient_name"] or "Patient",
+        hospital=os.environ.get("BREVO_SENDER_NAME") or "CancerLens",
+        support_contact=os.environ.get("BREVO_SENDER_EMAIL") or TENANT_CONFIG["supportContact"],
+        visit=ctx["visit"],
+        doctor_notes=ctx["doctor_notes"],
+        signed_by=ctx["signed_by"],
+    )
+    try:
+        message_id = mailer.send_email(ctx["email"], ctx["patient_name"] or "Patient", mail["subject"], mail["html"], mail["text"])
+    except mailer.MailerError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    store.log_report_email(visit_code, message_id)
+    patient_code = ctx["visit"].get("patient_code")
+    audit_logs.insert(0, AuditLogEntry(
+        id=f"EVT-{uuid.uuid4().hex[:6].upper()}",
+        timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        actor="PATIENT_REGISTRY",
+        action="REPORT_EMAILED",
+        details=f"Report for visit {visit_code} e-mailed to {patient_code}'s address on record.",
+        status="SUCCESS",
+    ))
+    return {"visitCode": visit_code, "sent": True, "recipient": _mask_email(ctx["email"])}
+
+
+@app.post("/api/visits/{visit_code}/whatsapp-link", dependencies=[Depends(require_registry_key)])
+def visit_whatsapp_link(visit_code: str):
+    """Build a WhatsApp click-to-chat link (notification only, no diagnosis) for the patient's number on record."""
+    store = _registry()
+    ctx = store.report_context(visit_code)
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Visit not found")
+    if ctx["visit"].get("status") != "signed_off":
+        raise HTTPException(status_code=409, detail="WhatsApp notification is available after the doctor has signed off")
+    try:
+        phone = whatsapp.normalize_phone(ctx["phone"])
+    except whatsapp.WhatsAppError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    message = whatsapp.build_message(
+        ctx["patient_name"] or "",
+        os.environ.get("BREVO_SENDER_NAME") or "CancerLens",
+        report_emailed=bool(ctx["visit"].get("report_emails")),
+    )
+    store.log_whatsapp_link(visit_code)
+    audit_logs.insert(0, AuditLogEntry(
+        id=f"EVT-{uuid.uuid4().hex[:6].upper()}",
+        timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        actor="PATIENT_REGISTRY",
+        action="WHATSAPP_NOTIFICATION_OPENED",
+        details=f"WhatsApp notification prepared for {ctx['visit'].get('patient_code')} (visit {visit_code}).",
+        status="INFO",
+    ))
+    return {
+        "visitCode": visit_code,
+        "url": whatsapp.click_to_chat_url(phone, message),
+        "recipient": whatsapp.mask_phone(phone),
+    }
+
+
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}{'•' * max(len(local) - 1, 2)}@{domain}"

@@ -1,5 +1,5 @@
 from typing import List, Optional, Literal, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 Modality = Literal["MR", "CT", "DX", "MG", "US", "NM"]
 Domain = Literal["brain", "lung", "breast", "bone", "skin"]
@@ -72,6 +72,24 @@ class AuditLogEntry(BaseModel):
     action: str
     details: str
     status: str
+
+class PatientIntakeRequest(BaseModel):
+    fullName: str = Field(min_length=2, max_length=120)
+    mrn: str = Field(min_length=3, max_length=64)
+    age: int = Field(ge=0, le=130)
+    dateOfBirth: str = Field(max_length=32)
+    sex: Literal["male", "female", "other"]
+    bloodGroup: str = Field(max_length=4)
+    weight: float = Field(gt=0, le=500)
+    phone: str = Field(min_length=7, max_length=32)
+    email: str = Field(max_length=254)
+
+class PatientLookupRequest(BaseModel):
+    mrn: str = Field(min_length=3, max_length=64)
+
+class VisitSignOffRequest(BaseModel):
+    notes: str = Field(default="", max_length=10000)
+    signedBy: Optional[str] = Field(default=None, max_length=120)
 
 class TenantConfigResponse(BaseModel):
     hospitalName: str
