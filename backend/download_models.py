@@ -24,71 +24,59 @@ MODELS_DIR = PROJECT_ROOT / "models"
 
 MODEL_FILES = [
     {
-        "description": "Parent Router — router_model_final.keras (primary)",
-        "file_id": "1GYWKIndDawSWGZyc_chPtnmybgyFIQAh",
+        "description": "Parent Router — router_model_final.onnx (High-speed, low-memory ONNX)",
+        "file_id": os.environ.get("GDRIVE_PARENT_MODEL_ROUTER_ONNX", "15aF99KM8KfyVVkZhhparLInZP_-ASSvy"),
+        "dest": MODELS_DIR / "Parent_Model" / "router_model_final.onnx",
+    },
+    {
+        "description": "Parent Router — router_model_final.keras (legacy fallback)",
+        "file_id": os.environ.get("GDRIVE_PARENT_MODEL_ROUTER_MODEL_FINAL", "1GYWKIndDawSWGZyc_chPtnmybgyFIQAh"),
         "dest": MODELS_DIR / "Parent_Model" / "router_model_final.keras",
     },
     {
-        "description": "Parent Router — best_finetuned.keras (fallback 1)",
-        "file_id": "1BFeCZDIdDLML0ulW-aL_OdTZ64Cv367G",
-        "dest": MODELS_DIR / "Parent_Model" / "best_finetuned.keras",
+        "description": "Child — Brain Pathology ONNX",
+        "file_id": os.environ.get("GDRIVE_BRAIN_MODEL_ONNX", "1I2WF-wzL-cwD4PvIDkdmWjDBzZoG_785"),
+        "dest": MODELS_DIR / "Child_Brain_Cancer_Processed" / "best_child_model.onnx",
     },
     {
-        "description": "Parent Router — best_head.keras (fallback 2)",
-        "file_id": "138rLs1BaayyUD4-qyYkuUwbAo_RXnZ2m",
-        "dest": MODELS_DIR / "Parent_Model" / "best_head.keras",
+        "description": "Child — Lung Pathology ONNX",
+        "file_id": os.environ.get("GDRIVE_LUNG_MODEL_ONNX", "1UFFkCixFUmlfNAX-em6pG90XGJmOceVh"),
+        "dest": MODELS_DIR / "Child_Lung_Cancer_Processed" / "best_child_model.onnx",
     },
     {
-        "description": "Child — Brain Pathology Classifier",
-        "file_id": "1NsS8IZrdB8BguUDyjXxC3AqbpYriD00w",
-        "dest": MODELS_DIR / "Child_Brain_Cancer_Processed" / "best_child_model.pt",
+        "description": "Child — Breast Pathology ONNX",
+        "file_id": os.environ.get("GDRIVE_BREAST_MODEL_ONNX", "1rYNE1pNPqE1m-QzyzlJafQX41N084ivV"),
+        "dest": MODELS_DIR / "Child_Breast_Cancer_Processed" / "best_child_model.onnx",
     },
     {
-        "description": "Child — Lung Pathology Classifier",
-        "file_id": "1Ch5gr1JaUfByNQTf3DxpDZ1JFh3aR9sB",
-        "dest": MODELS_DIR / "Child_Lung_Cancer_Processed" / "best_child_model.pt",
-    },
-    {
-        "description": "Child — Breast Pathology Classifier",
-        "file_id": "1evvS_RvzZZWiVnfAyInwsOQLILKcFZlF",
-        "dest": MODELS_DIR / "Child_Breast_Cancer_Processed" / "best_child_model.pt",
-    },
-    {
-        "description": "Child — Bone Pathology Classifier",
-        "file_id": "1bgXwHAQgSQlzUJtwe_6OlpbYkzxqnbk0",
-        "dest": MODELS_DIR / "Child_Bone_Cancer_Processed" / "best_child_model.pt",
+        "description": "Child — Bone Pathology ONNX",
+        "file_id": os.environ.get("GDRIVE_BONE_MODEL_ONNX", "1_8xDPTWYHfXY2iKluujeuQcDbIvX2dly"),
+        "dest": MODELS_DIR / "Child_Bone_Cancer_Processed" / "best_child_model.onnx",
     },
 ]
 
 # ── Child model specifications by domain ──────────────────────────────────────
 CHILD_MODEL_SPECS = {
     "brain": {
-        "description": "Child — Brain Pathology Classifier",
-        "file_id": "1NsS8IZrdB8BguUDyjXxC3AqbpYriD00w",
-        "dest": MODELS_DIR / "Child_Brain_Cancer_Processed" / "best_child_model.pt",
+        "description": "Child — Brain Pathology ONNX",
+        "file_id": os.environ.get("GDRIVE_BRAIN_MODEL_ONNX", "1I2WF-wzL-cwD4PvIDkdmWjDBzZoG_785"),
+        "dest": MODELS_DIR / "Child_Brain_Cancer_Processed" / "best_child_model.onnx",
     },
     "lung": {
-        "description": "Child — Lung Pathology Classifier",
-        "file_id": "1Ch5gr1JaUfByNQTf3DxpDZ1JFh3aR9sB",
-        "dest": MODELS_DIR / "Child_Lung_Cancer_Processed" / "best_child_model.pt",
+        "description": "Child — Lung Pathology ONNX",
+        "file_id": os.environ.get("GDRIVE_LUNG_MODEL_ONNX", "1UFFkCixFUmlfNAX-em6pG90XGJmOceVh"),
+        "dest": MODELS_DIR / "Child_Lung_Cancer_Processed" / "best_child_model.onnx",
     },
     "breast": {
-        "description": "Child — Breast Pathology Classifier",
-        "file_id": "1evvS_RvzZZWiVnfAyInwsOQLILKcFZlF",
-        "dest": MODELS_DIR / "Child_Breast_Cancer_Processed" / "best_child_model.pt",
+        "description": "Child — Breast Pathology ONNX",
+        "file_id": os.environ.get("GDRIVE_BREAST_MODEL_ONNX", "1rYNE1pNPqE1m-QzyzlJafQX41N084ivV"),
+        "dest": MODELS_DIR / "Child_Breast_Cancer_Processed" / "best_child_model.onnx",
     },
     "bone": {
-        "description": "Child — Bone Pathology Classifier",
-        "file_id": "1bgXwHAQgSQlzUJtwe_6OlpbYkzxqnbk0",
-        "dest": MODELS_DIR / "Child_Bone_Cancer_Processed" / "best_child_model.pt",
+        "description": "Child — Bone Pathology ONNX",
+        "file_id": os.environ.get("GDRIVE_BONE_MODEL_ONNX", "1_8xDPTWYHfXY2iKluujeuQcDbIvX2dly"),
+        "dest": MODELS_DIR / "Child_Bone_Cancer_Processed" / "best_child_model.onnx",
     },
-    # Skin child model — no Drive weight available locally; fallback dummy probs used
-    # To add: upload a HAM10000-trained DenseNet121 .pt and paste its file_id here
-    # "skin": {
-    #     "description": "Child — Skin / Dermoscopic Classifier",
-    #     "file_id": "<YOUR_GDRIVE_FILE_ID>",
-    #     "dest": MODELS_DIR / "Child_Skin_Cancer_Processed" / "best_child_model.pt",
-    # },
 }
 
 # ── Embedded class names ─────────────────────────────────────────────────────

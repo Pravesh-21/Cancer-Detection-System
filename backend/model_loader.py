@@ -6,15 +6,35 @@ from typing import Dict, List, Tuple, Any, Optional
 
 import numpy as np
 from PIL import Image
-import torch
-import torch.nn as nn
-from torchvision import models, transforms
-import tensorflow as tf
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Optional ONNX Runtime for ultra-low-memory inference (preferred on Render)
+try:
+    import onnxruntime as ort
+    ONNX_AVAILABLE = True
+except ImportError:
+    ONNX_AVAILABLE = False
+
+# Optional PyTorch for fallback
+try:
+    import torch
+    import torch.nn as nn
+    from torchvision import models, transforms
+    TORCH_AVAILABLE = True
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+except ImportError:
+    TORCH_AVAILABLE = False
+    DEVICE = "cpu"
+
+# Optional TensorFlow for fallback
+try:
+    import tensorflow as tf
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
+
 
 DOMAIN_LABELS = {
     "brain": "Brain / Neuro-Cranial",
@@ -45,6 +65,7 @@ CLASS_DISPLAY_NAMES = {
 HIGH_RISK_CLASSES = {"glioma", "malignant", "cancer", "lung_aca", "lung_scc", "mel", "bcc"}
 MODERATE_RISK_CLASSES = {"meningioma", "pituitary", "akiec"}
 
+
 def get_risk_level(class_name: str) -> str:
     if class_name in HIGH_RISK_CLASSES:
         return "high"
@@ -53,6 +74,17 @@ def get_risk_level(class_name: str) -> str:
     if class_name in {"normal", "notumor", "lung_n", "benign", "nv"}:
         return "normal"
     return "low"
+
+
+def preprocess_child_numpy(image_pil: Image.Image) -> np.ndarray:
+    """Pure NumPy ImageNet normalization (identical to torchvision transforms, zero torch overhead)."""
+    img = image_pil.convert("RGB").resize((224, 224))
+    arr = np.array(img, dtype=np.float32) / 255.0
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    norm = (arr - mean) / std
+    chw = np.transpose(norm, (2, 0, 1))
+    return np.expand_dims(chw, axis=0).astype(np.float32)
 
 
 class ModelEngine:
@@ -70,30 +102,43 @@ class ModelEngine:
 
         print("\n" + "=" * 60)
         print(" INITIALIZING CLINICAL DIAGNOSTIC MODEL PIPELINE")
-        print(f" PyTorch Hardware Target : {DEVICE}")
+        print(f" Engine Hardware Target : {DEVICE if TORCH_AVAILABLE else 'CPU (ONNX)'}")
         print("=" * 60)
 
-        # Optimize TensorFlow for low-resource cloud CPUs
-        try:
-            tf.config.threading.set_inter_op_parallelism_threads(1)
-            tf.config.threading.set_intra_op_parallelism_threads(1)
-        except Exception:
-            pass
+        # Optimize TensorFlow threads if present
+        if TF_AVAILABLE:
+            try:
+                tf.config.threading.set_inter_op_parallelism_threads(1)
+                tf.config.threading.set_intra_op_parallelism_threads(1)
+            except Exception:
+                pass
 
         self._load_parent_router()
-        self.child_models: Dict[str, Tuple[nn.Module, List[str]]] = {}
-
-        self.child_transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
+        self.child_models: Dict[str, Any] = {}
 
         self.initialized = True
         print(" DOMAIN ROUTER LOADED & READY (Child models configured for on-demand loading)!\n")
 
     def _load_parent_router(self):
         parent_dir = MODELS_DIR / "Parent_Model"
+        class_names_path = parent_dir / "class_names.json"
+        with open(class_names_path, "r") as f:
+            self.parent_classes = json.load(f)
+
+        # 1. Prefer ONNX model (ultra-low memory)
+        onnx_weight = parent_dir / "router_model_final.onnx"
+        if ONNX_AVAILABLE and onnx_weight.exists():
+            print(f"Loading Domain Router via ONNX Runtime: {onnx_weight.name}")
+            opts = ort.SessionOptions()
+            opts.intra_op_num_threads = 1
+            opts.inter_op_num_threads = 1
+            self.parent_onnx_session = ort.InferenceSession(str(onnx_weight), sess_options=opts, providers=["CPUExecutionProvider"])
+            self.parent_onnx_input_name = self.parent_onnx_session.get_inputs()[0].name
+            self.parent_is_onnx = True
+            print(f" -> Router classes: {self.parent_classes} (ONNX)")
+            return
+
+        # 2. Fallback to Keras model
         possible_weights = [
             parent_dir / "router_model_final.keras",
             parent_dir / "best_finetuned.keras",
@@ -108,16 +153,16 @@ class ModelEngine:
         if not chosen_weight:
             raise FileNotFoundError(f"Parent model weights not found in {parent_dir}")
 
-        class_names_path = parent_dir / "class_names.json"
-        with open(class_names_path, "r") as f:
-            self.parent_classes = json.load(f)
+        if not TF_AVAILABLE:
+            raise RuntimeError("TensorFlow is required to load .keras weights, but not installed.")
 
-        print(f"Loading Domain Router from: {chosen_weight.name}")
+        print(f"Loading Domain Router via TensorFlow: {chosen_weight.name}")
         self.parent_model = tf.keras.models.load_model(chosen_weight)
-        print(f" -> Router classes: {self.parent_classes}")
+        self.parent_is_onnx = False
+        print(f" -> Router classes: {self.parent_classes} (Keras)")
 
-    def get_or_load_child_model(self, domain: str) -> Optional[Tuple[nn.Module, List[str]]]:
-        """Load domain-specific child network on demand into RAM."""
+    def get_or_load_child_model(self, domain: str) -> Optional[Tuple[str, Any, List[str]]]:
+        """Load domain-specific child network on demand into RAM. Returns (format, model_or_session, classes)."""
         if domain in self.child_models:
             return self.child_models[domain]
 
@@ -126,7 +171,6 @@ class ModelEngine:
             "lung":   MODELS_DIR / "Child_Lung_Cancer_Processed",
             "breast": MODELS_DIR / "Child_Breast_Cancer_Processed",
             "bone":   MODELS_DIR / "Child_Bone_Cancer_Processed",
-            # skin uses the same DenseNet architecture with HAM10000 class subset
             "skin":   MODELS_DIR / "Child_Skin_Cancer_Processed",
         }
 
@@ -134,47 +178,65 @@ class ModelEngine:
         if not folder:
             return None
 
-        weight_path = folder / "best_child_model.pt"
         classes_path = folder / "class_names.json"
+        onnx_weight = folder / "best_child_model.onnx"
+        pt_weight = folder / "best_child_model.pt"
 
-        if not weight_path.exists():
+        # If neither exists, trigger on-demand download
+        if not onnx_weight.exists() and not pt_weight.exists():
             from download_models import download_child_model
             print(f"Weights missing for {domain}. Fetching on-demand...")
             download_child_model(domain)
 
-        if not weight_path.exists() or not classes_path.exists():
-            print(f"Warning: Model weights missing for {domain} at {folder}")
+        if not classes_path.exists():
             return None
 
         with open(classes_path, "r") as f:
             classes = json.load(f)
 
-        print(f"Loading Child Network on-demand: {domain.upper()}...")
-        model = models.densenet121(weights=None)
-        in_features = model.classifier.in_features
-        model.classifier = nn.Sequential(
-            nn.Dropout(0.3),
-            nn.Linear(in_features, len(classes))
-        )
-        # ── FIX: weights_only=True avoids arbitrary code execution on untrusted weights
-        model.load_state_dict(torch.load(weight_path, map_location=DEVICE, weights_only=True))
-        model = model.to(DEVICE)
-        model.eval()
+        # 1. Prefer ONNX model (ultra-fast, ~1MB weights, ~30MB RAM)
+        if ONNX_AVAILABLE and onnx_weight.exists():
+            print(f"Loading Child Network via ONNX Runtime: {domain.upper()}...")
+            opts = ort.SessionOptions()
+            opts.intra_op_num_threads = 1
+            sess = ort.InferenceSession(str(onnx_weight), sess_options=opts, providers=["CPUExecutionProvider"])
+            in_name = sess.get_inputs()[0].name
+            self.child_models[domain] = ("onnx", (sess, in_name), classes)
+            print(f"Loaded Child Network: {domain.upper()} ({len(classes)} classes) [ONNX]")
+            return self.child_models[domain]
 
-        self.child_models[domain] = (model, classes)
-        print(f"Loaded Child Network: {domain.upper()} ({len(classes)} classes)")
-        return self.child_models[domain]
+        # 2. Fallback to PyTorch .pt model
+        if pt_weight.exists() and TORCH_AVAILABLE:
+            print(f"Loading Child Network via PyTorch: {domain.upper()}...")
+            model = models.densenet121(weights=None)
+            in_features = model.classifier.in_features
+            model.classifier = nn.Sequential(
+                nn.Dropout(0.3),
+                nn.Linear(in_features, len(classes))
+            )
+            model.load_state_dict(torch.load(pt_weight, map_location=DEVICE, weights_only=True))
+            model = model.to(DEVICE)
+            model.eval()
+            self.child_models[domain] = ("torch", model, classes)
+            print(f"Loaded Child Network: {domain.upper()} ({len(classes)} classes) [PyTorch]")
+            return self.child_models[domain]
+
+        print(f"Warning: Model weights missing for {domain} at {folder}")
+        return None
 
     def predict_domain(self, image_pil: Image.Image) -> Tuple[str, float, float, List[Dict[str, Any]]]:
         start_time = time.perf_counter()
 
         img = image_pil.convert("RGB").resize((224, 224))
-        # Note: The Keras parent router model was trained directly on raw [0, 255] pixel arrays
-        # (empirically validated: raw produces 99.4-100% domain accuracy across test sets).
+        # Note: Model was trained on raw [0, 255] float arrays
         img_arr = np.array(img, dtype=np.float32)
         img_tensor = np.expand_dims(img_arr, axis=0)
 
-        raw_preds = self.parent_model.predict(img_tensor, verbose=0)[0]
+        if getattr(self, "parent_is_onnx", False):
+            raw_preds = self.parent_onnx_session.run(None, {self.parent_onnx_input_name: img_tensor})[0][0]
+        else:
+            raw_preds = self.parent_model.predict(img_tensor, verbose=0)[0]
+
         latency_ms = (time.perf_counter() - start_time) * 1000
 
         prob_dict = []
@@ -197,8 +259,6 @@ class ModelEngine:
 
         child_info = self.get_or_load_child_model(domain)
         if not child_info:
-            # No child model for this domain — construct domain-aware uncertainty response
-            # instead of always asserting melanoma regardless of input
             classes_path = MODELS_DIR / f"Child_{domain.capitalize()}_Cancer_Processed" / "class_names.json"
             try:
                 import json as _json
@@ -207,7 +267,6 @@ class ModelEngine:
                 fallback_classes = ["mel", "nv", "bcc", "akiec"]
 
             n = len(fallback_classes)
-            # Uniform low-confidence distribution — signals model not loaded, not a confident call
             uniform_p = round(1.0 / n, 4)
             dummy_probs = [
                 {
@@ -225,13 +284,27 @@ class ModelEngine:
             print(f"[WARN] No child model weights for domain '{domain}'. Returning uniform uncertainty distribution.")
             return top_class, top_display, top_risk, uniform_p, round(latency_ms, 1), dummy_probs
 
-        model, class_names = child_info
-        img = image_pil.convert("RGB")
-        tensor = self.child_transform(img).unsqueeze(0).to(DEVICE)
+        model_type, model_obj, class_names = child_info
 
-        with torch.no_grad():
-            outputs = model(tensor)
-            probs = torch.softmax(outputs, dim=1)[0].cpu().numpy()
+        if model_type == "onnx":
+            sess, in_name = model_obj
+            tensor_np = preprocess_child_numpy(image_pil)
+            logits = sess.run(None, {in_name: tensor_np})[0][0]
+            # Numerically stable softmax
+            exp = np.exp(logits - np.max(logits))
+            probs = exp / exp.sum()
+        else:
+            # PyTorch fallback
+            img = image_pil.convert("RGB")
+            child_transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+            ])
+            tensor = child_transform(img).unsqueeze(0).to(DEVICE)
+            with torch.no_grad():
+                outputs = model_obj(tensor)
+                probs = torch.softmax(outputs, dim=1)[0].cpu().numpy()
 
         latency_ms = (time.perf_counter() - start_time) * 1000
 
