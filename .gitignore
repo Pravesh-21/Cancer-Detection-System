@@ -1,25 +1,79 @@
 # ─────────────────────────────────────────────
-#  Diagnostic Radiography Suite — .gitignore
+#  CancerLens Diagnostic Workstation — .gitignore
 # ─────────────────────────────────────────────
 
-# ── Project-specific large / sensitive folders ──
+# ── Large Model Weights & Checkpoints (>100MB) ──
 models/
-datasets/
-scripts/
-checkpoints/
+**/models/
 weights/
+checkpoints/
 pretrained/
 exports/
+*.pt
+*.pth
+*.keras
+*.h5
+*.hdf5
+*.ckpt
+*.onnx
+*.tflite
+*.pb
+*.bin
+*.safetensors
+*.pkl
+*.pickle
+
+# ── Medical Imaging Datasets & Raw Scans ──
+datasets/
+**/datasets/
+data/
+uploads/
+**/uploads/
 sample_images/
 test_images/
-uploads/
+scans/
+*.dcm
+*.dicom
+*.nii
+*.nii.gz
+*.npy
+*.npz
 
-# ── Python virtual environment ──
+# ── Local Training & Processing Scripts (optional) ──
+scripts/
+
+# ── Compressed Archives & Large Bundles ──
+*.zip
+*.tar
+*.gz
+*.tgz
+*.rar
+*.7z
+
+# ── Environment Variables & Sensitive Secrets ──
+.env
+.env.*
+*.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env.local
+frontend/.env.*.local
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+
+# ── Python Virtual Environments & Packages ──
 venv/
 .venv/
 env/
 .env/
+ENV/
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.pyo
 *.pyd
@@ -30,33 +84,34 @@ build/
 .eggs/
 *.so
 
-# ── Python tooling ──
+# ── Python Tooling & Caches ──
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
 .coverage
 htmlcov/
 *.log
+logs/
 
-# ── Environment / secrets ──
-.env
-.env.local
-.env.*.local
-*.env
-backend/.env
-
-# ── Next.js / Node ──
+# ── Next.js / Node / Frontend ──
 node_modules/
+**/node_modules/
 .next/
+**/.next/
 out/
+**/out/
 .turbo/
+**/.turbo/
 .vercel/
+**/.vercel/
+*.tsbuildinfo
+next-env.d.ts
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# ── IDE / OS artifacts ──
+# ── IDEs, Editors & AI Agents ──
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -65,24 +120,17 @@ desktop.ini
 *.swp
 *.swo
 *~
+.gemini/
+.agents/
+.cursor/
+.windsurf/
+.cline/
 
-# ── Jupyter ──
+# ── Jupyter Notebooks ──
 .ipynb_checkpoints/
 *.ipynb
 
-# ── Compiled / binary ──
-*.pkl
-*.pt
-*.pth
-*.h5
-*.hdf5
-*.onnx
-*.tflite
-*.pb
-*.bin
-*.safetensors
-
-# ── Temporary / misc ──
+# ── Temporary / Backup Files ──
 tmp/
 temp/
 *.tmp

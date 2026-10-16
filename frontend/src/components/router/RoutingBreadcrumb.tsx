@@ -24,10 +24,10 @@ export default function RoutingBreadcrumb({
     <div className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 animate-fade-in">
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-          Hierarchical Neural Pipeline Telemetry
+          Clinical Analysis Protocol
         </span>
         <span className="text-[10px] font-mono text-slate-600">
-          Latency: <strong className="text-slate-900">{isComplete ? formatLatency(latencyMs) : "--"}</strong>
+          Processing Time: <strong className="text-slate-900">{isComplete ? formatLatency(latencyMs) : "--"}</strong>
         </span>
       </div>
 
@@ -39,7 +39,7 @@ export default function RoutingBreadcrumb({
             <p className="text-[9px] font-bold uppercase text-slate-400 tracking-wider">
               {WORKFLOW_STAGES[0].badgeLabel}
             </p>
-            <p className="text-[11px] font-medium truncate">PACS Ingestion</p>
+            <p className="text-[11px] font-medium truncate">Scan Ingestion</p>
           </div>
         </div>
 

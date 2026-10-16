@@ -82,6 +82,13 @@ CHILD_MODEL_SPECS = {
         "file_id": "1bgXwHAQgSQlzUJtwe_6OlpbYkzxqnbk0",
         "dest": MODELS_DIR / "Child_Bone_Cancer_Processed" / "best_child_model.pt",
     },
+    # Skin child model — no Drive weight available locally; fallback dummy probs used
+    # To add: upload a HAM10000-trained DenseNet121 .pt and paste its file_id here
+    # "skin": {
+    #     "description": "Child — Skin / Dermoscopic Classifier",
+    #     "file_id": "<YOUR_GDRIVE_FILE_ID>",
+    #     "dest": MODELS_DIR / "Child_Skin_Cancer_Processed" / "best_child_model.pt",
+    # },
 }
 
 # ── Embedded class names ─────────────────────────────────────────────────────
@@ -96,6 +103,9 @@ CLASS_NAMES = {
         ["benign", "malignant"],
     MODELS_DIR / "Child_Bone_Cancer_Processed" / "class_names.json":
         ["cancer", "normal"],
+    # Skin — HAM10000 subset (4 most common dermoscopic classes)
+    MODELS_DIR / "Child_Skin_Cancer_Processed" / "class_names.json":
+        ["mel", "nv", "bcc", "akiec"],
 }
 
 

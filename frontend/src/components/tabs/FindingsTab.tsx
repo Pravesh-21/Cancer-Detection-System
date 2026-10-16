@@ -5,8 +5,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   AlertCircle,
-  Stethoscope,
   Info,
+  Stethoscope,
 } from "lucide-react";
 import { cn, getICD10 } from "@/lib/utils";
 import type { ClinicalSessionResult } from "@/lib/types";
@@ -20,10 +20,10 @@ interface FindingsTabProps {
 export default function FindingsTab({ result }: FindingsTabProps) {
   if (!result) {
     return (
-      <div className="py-12 text-center text-slate-400">
-        <FileText className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-        <p className="text-[13px] font-bold text-slate-600">{STRINGS.tabs.emptyFindingsTitle}</p>
-        <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+      <div className="py-12 text-center text-[#7A91A6]">
+        <FileText className="w-8 h-8 mx-auto mb-2 text-[#7A91A6] opacity-60" />
+        <p className="text-[14px] font-bold text-[#0B2239]">{STRINGS.tabs.emptyFindingsTitle}</p>
+        <p className="text-[12px] text-[#7A91A6] mt-1 max-w-sm mx-auto">
           {STRINGS.tabs.emptyFindingsPrompt}
         </p>
       </div>
@@ -102,16 +102,22 @@ export default function FindingsTab({ result }: FindingsTabProps) {
   };
 
   const severity = getSeverityToken(diagnosticFinding.riskLevel);
+  const isHighRisk = diagnosticFinding.riskLevel === "high";
 
   return (
-    <div className="space-y-4 animate-fade-in" role="tabpanel" aria-label={STRINGS.tabs.findingsTabTitle}>
-      {/* ── Clinical Impression Summary ── */}
-      <div className="clinical-card p-4 space-y-3">
+    <div className="space-y-4 animate-fade-rise" role="tabpanel" aria-label={STRINGS.tabs.findingsTabTitle}>
+      {/* ── Clinical Impression Summary: Dark and Light Contrast ── */}
+      <div className="clinical-card p-5 space-y-3.5 border-l-4 border-l-[#0F74C9]">
         <div className="flex items-center justify-between">
-          <span className="section-header">Primary Diagnostic Impression</span>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#0F74C9]" />
+            <span className="text-[12px] font-bold uppercase tracking-wider text-[#0B2239]">
+              Primary Diagnostic Impression
+            </span>
+          </div>
           <span
             className={cn(
-              "text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-2xs",
+              "text-[12px] font-bold px-3 py-0.5 rounded-full shadow-2xs",
               severity.badgeClass
             )}
           >
@@ -119,40 +125,55 @@ export default function FindingsTab({ result }: FindingsTabProps) {
           </span>
         </div>
 
-        <p className="text-[13px] text-slate-800 font-medium leading-relaxed">
+        <p className="body-14 text-[#0B2239] font-medium leading-relaxed">
           {advice.summary}
         </p>
 
-        <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
-          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1.5">
-            <Info className="w-3.5 h-3.5 text-clinical-600" />
+        <div className="p-3.5 bg-gradient-to-r from-[#F0F7FD] to-white border border-[#BAE6FD] rounded-[10px] space-y-1">
+          <span className="text-[11px] uppercase font-bold text-[#0F74C9] tracking-wider flex items-center gap-1.5">
+            <Info className="w-3.5 h-3.5 text-[#0F74C9]" />
             Decision Support &amp; Follow-Up Recommendation
           </span>
-          <p className="text-[12px] text-slate-700 leading-relaxed font-normal">
+          <p className="body-14 text-[#3C566E] leading-relaxed">
             {advice.followUp}
           </p>
         </div>
       </div>
 
-      {/* ── Urgency Triage Strip ── */}
-      <div className="clinical-card p-4 flex items-center justify-between">
+      {/* ── Urgency Triage Strip: High-Contrast Dark & Light Card ── */}
+      <div
+        className={cn(
+          "clinical-card p-4 flex items-center justify-between transition-all",
+          isHighRisk
+            ? "border-l-4 border-l-[#C8353B] bg-gradient-to-r from-[#FFF8F8] to-white border-[#F5C2C4]"
+            : "border-l-4 border-l-[#0E9F8E] bg-gradient-to-r from-[#F0FAF9] to-white border-[#BCE8E3]"
+        )}
+      >
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+          <div
+            className={cn(
+              "w-10 h-10 rounded-[10px] flex items-center justify-center shadow-xs flex-shrink-0",
+              isHighRisk
+                ? "bg-[#FDF2F2] border border-[#F8B4B7] text-[#C8353B]"
+                : "bg-[#F0FAF9] border border-[#BCE8E3] text-[#0E9F8E]"
+            )}
+          >
             {diagnosticFinding.riskLevel === "high" ? (
-              <AlertTriangle className="w-4 h-4 text-rose-600" />
+              <AlertTriangle className="w-5 h-5 text-[#C8353B]" />
             ) : diagnosticFinding.riskLevel === "moderate" ? (
-              <AlertCircle className="w-4 h-4 text-amber-600" />
+              <AlertCircle className="w-5 h-5 text-[#C98A0A]" />
             ) : (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <CheckCircle2 className="w-5 h-5 text-[#0E9F8E]" />
             )}
           </div>
           <div>
-            <p className="text-[10px] uppercase font-bold text-slate-400">Clinical Triage Urgency</p>
-            <p className="text-[13px] font-bold text-slate-900">{advice.urgency}</p>
+            <p className="text-[11px] uppercase font-bold text-[#7A91A6]">Clinical Triage Urgency</p>
+            <p className="text-[15px] font-extrabold text-[#0B2239]">{advice.urgency}</p>
           </div>
         </div>
 
-        <span className="text-[11px] font-mono text-slate-600 font-medium">
+        {/* Dark & light contrast pill for ICD code */}
+        <span className="text-[11px] font-mono font-bold bg-[#0B2239] text-[#7DD3FC] border border-[#16385C] px-3 py-1 rounded-[6px] shadow-2xs">
           ICD-10: {getICD10(diagnosticFinding.predictedClass).split("—")[0].trim()}
         </span>
       </div>

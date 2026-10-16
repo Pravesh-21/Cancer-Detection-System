@@ -8,7 +8,6 @@ import {
   Stethoscope,
   Clock,
   Activity,
-  Layers,
   Sparkles,
   AlertOctagon,
   RotateCcw,
@@ -67,42 +66,48 @@ export default function ChildDiagnosticCard({
 
   return (
     <div
-      className="clinical-card p-4 space-y-4"
+      className="clinical-card p-5 space-y-4 overflow-hidden"
       role="region"
       aria-label={STRINGS.diagnostic.title}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-clinical-100 text-clinical-700 font-bold text-[12px] flex items-center justify-center">
-            3
-          </span>
-          <div>
-            <h2 className="text-[13px] font-bold text-slate-900 leading-tight">
-              {STRINGS.diagnostic.title}
-            </h2>
-            <p className="text-[11px] text-slate-500">
-              {STRINGS.diagnostic.subtitle}
-            </p>
+      {/* Top Card Color Accent Line */}
+      <div className="h-[3px] bg-gradient-to-r from-[#C8353B] via-[#C98A0A] to-[#0E9F8E] -mx-5 -mt-5 mb-4 rounded-t-[16px]" />
+
+      {/* ── Header: Dark & Light Contrast ── */}
+      <div className="flex items-center justify-between pb-1">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-[8px] bg-gradient-to-br from-[#0B2239] to-[#07131F] border border-[#16385C] flex items-center justify-center text-[#F43F5E] shadow-xs flex-shrink-0">
+            <Stethoscope className="w-3.5 h-3.5" />
           </div>
+          <h2 className="text-[16px] font-bold text-[#0B2239] leading-tight tracking-tight">
+            Diagnostic Pathology Finding
+          </h2>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#C8353B] bg-[#FDF2F2] border border-[#F8B4B7] px-2 py-0.5 rounded-[6px]">
+            Neural Inference
+          </span>
         </div>
 
         {isComplete && riskConfig && (
           <span
             className={cn(
-              "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold shadow-2xs transition-all",
-              riskConfig.badgeClass,
-              riskConfig.pulseClass
+              "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-bold animate-fade-rise shadow-2xs",
+              riskConfig.tier === "high"
+                ? "bg-[#FDF2F2] text-[#C8353B] border border-[#F8B4B7]"
+                : riskConfig.tier === "moderate"
+                ? "bg-[#FEF9EE] text-[#C98A0A] border border-[#FBE3B5]"
+                : "bg-[#F0FAF9] text-[#0E9F8E] border border-[#BCE8E3]"
             )}
             aria-label={`${riskConfig.label}: ${riskConfig.sublabel}`}
           >
+            {/* Always pair severity color with icon AND clear text label */}
             {riskConfig.tier === "high" && (
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-600" aria-hidden="true" />
+              <AlertTriangle className="w-3.5 h-3.5 text-[#C8353B]" aria-hidden="true" />
             )}
             {riskConfig.tier === "moderate" && (
-              <AlertCircle className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />
+              <AlertCircle className="w-3.5 h-3.5 text-[#C98A0A]" aria-hidden="true" />
             )}
             {riskConfig.tier === "normal" && (
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-[#0E9F8E]" aria-hidden="true" />
             )}
             <span>{riskConfig.label}</span>
           </span>
@@ -112,12 +117,12 @@ export default function ChildDiagnosticCard({
       {/* ── Diagnostic State Machine ── */}
       {diagnosticState === "loading" && (
         <div className="space-y-4 py-2" aria-busy="true">
-          <div className="h-20 w-full bg-slate-100 rounded-lg skeleton" />
+          <div className="h-24 w-full bg-[#EEF4F8] rounded-[10px] skeleton" />
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
               <div key={i} className="space-y-1">
-                <div className="h-3 w-1/3 bg-slate-200 rounded skeleton" />
-                <div className="h-2 w-full bg-slate-100 rounded skeleton" />
+                <div className="h-3 w-1/3 bg-[#E2ECF2] rounded skeleton" />
+                <div className="h-2 w-full bg-[#EEF4F8] rounded skeleton" />
               </div>
             ))}
           </div>
@@ -125,62 +130,62 @@ export default function ChildDiagnosticCard({
       )}
 
       {diagnosticState === "error" && (
-        <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-center space-y-2 animate-fade-in">
-          <AlertOctagon className="w-6 h-6 mx-auto text-rose-600 mb-1" />
-          <p className="text-[13px] font-bold">Diagnostic Inference Interrupted</p>
-          <div className="p-2.5 rounded bg-white/80 border border-rose-200 text-[11px] text-rose-700 text-left font-mono break-words">
-            {errorMessage || "Pipeline encountered an evaluation exception. Verify network connection and retry."}
-          </div>
-          <p className="text-[11px] text-rose-600">
-            {errorMessage?.includes("initializing") || errorMessage?.includes("loading")
-              ? "The cloud server is online and downloading neural model weights. Please allow 30–60 seconds, then retry."
-              : "Verify that the backend service is healthy and retry."}
+        <div className="p-4 rounded-[10px] bg-[#FDF2F2] border border-[#F8B4B7] text-[#C8353B] text-center space-y-2.5 animate-fade-rise">
+          <AlertOctagon className="w-6 h-6 mx-auto text-[#C8353B]" />
+          <p className="text-[14px] font-bold">Diagnostic Evaluation Notice</p>
+          <p className="text-[12px] text-[#C8353B]/90 max-w-sm mx-auto leading-relaxed">
+            {errorMessage || "Unable to complete radiologic assessment. Please ensure a valid medical scan is provided and retry."}
           </p>
           {onRetry && (
             <button
               type="button"
               onClick={onRetry}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-[12px] font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition-all active:scale-[0.98] cursor-pointer mt-1"
+              className="btn-clinical bg-[#C8353B] hover:bg-[#A8242A] text-white cursor-pointer shadow-xs"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Retry Diagnostic Pipeline</span>
+              <span>Retry Diagnostic Analysis</span>
             </button>
           )}
         </div>
       )}
 
       {isComplete && childResult && severityToken && (
-        <div className="space-y-4 animate-fade-in">
-          {/* Prominent Primary Pathology Box with Accessible Typographic Hierarchy */}
+        <div className="space-y-4 animate-fade-rise">
+          {/* Prominent Primary Pathology Box with High-Contrast Dark & Light Design */}
           <div
             className={cn(
-              "p-4 rounded-lg border transition-all relative overflow-hidden",
+              "p-4 rounded-[10px] border transition-all relative overflow-hidden",
               severityToken.cardBgClass,
               severityToken.cardBorderClass,
-              severityToken.patternClass
+              calculatedRiskTier === "high"
+                ? "border-l-4 border-l-[#C8353B]"
+                : calculatedRiskTier === "moderate"
+                ? "border-l-4 border-l-[#C98A0A]"
+                : "border-l-4 border-l-[#0E9F8E]"
             )}
           >
             <div className="flex items-start justify-between gap-3">
-              <div className="space-y-0.5 min-w-0">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 block">
+              <div className="space-y-1.5 min-w-0">
+                <span className="text-[11px] uppercase font-bold tracking-wider text-[#7A91A6] block">
                   {STRINGS.diagnostic.primaryFindingHeader}
                 </span>
-                <h3 className="text-[18px] font-black text-slate-900 leading-tight truncate">
+                <h3 className="text-[22px] font-extrabold text-[#0B2239] leading-tight truncate">
                   {childResult.displayName}
                 </h3>
                 <div className="pt-1 flex items-center gap-2 flex-wrap">
-                  <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded bg-white/80 border border-slate-200 text-slate-700 shadow-2xs">
+                  {/* High-contrast dark pill for real clinical ICD tag */}
+                  <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-[6px] bg-[#0B2239] border border-[#16385C] text-[#7DD3FC] shadow-2xs">
                     ICD-10: {getICD10(childResult.predictedClass)}
                   </span>
                 </div>
               </div>
 
-              {/* Dominant Confidence Score */}
-              <div className="text-right flex-shrink-0">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 block">
+              {/* Dominant Confidence Score Badge with Dark & Light Contrast */}
+              <div className="text-right flex-shrink-0 bg-[#0B2239] border border-[#16385C] px-3.5 py-2 rounded-[8px] shadow-sm">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-[#7DD3FC] block">
                   {STRINGS.diagnostic.confidenceHeader}
                 </span>
-                <span className="text-[22px] font-extrabold text-slate-900 font-mono tracking-tight">
+                <span className="text-[22px] font-extrabold text-[#38BDF8] font-mono tracking-tight">
                   {formatConfidence(childResult.confidence)}
                 </span>
               </div>
@@ -188,8 +193,8 @@ export default function ChildDiagnosticCard({
 
             {/* Low Confidence Advisory Notice */}
             {diagnosticState === "low-confidence" && (
-              <div className="mt-3 p-2 rounded bg-amber-100/90 border border-amber-300 text-amber-900 text-[11px] flex items-center gap-2">
-                <HelpCircle className="w-4 h-4 flex-shrink-0 text-amber-700" />
+              <div className="mt-3 p-2.5 rounded-[8px] bg-[#FEF9EE] border border-[#FBE3B5] text-[#C98A0A] text-[12px] flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 flex-shrink-0 text-[#C98A0A]" />
                 <span>{STRINGS.diagnostic.lowConfidenceNotice}</span>
               </div>
             )}
@@ -197,19 +202,19 @@ export default function ChildDiagnosticCard({
 
           {/* Saliency / Grad-CAM Attention Map Activation Toggle */}
           {onToggleHeatmap && (
-            <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-              <div className="flex items-center gap-2 text-[11px] font-medium text-slate-700">
-                <Sparkles className="w-3.5 h-3.5 text-clinical-600" />
+            <div className="flex items-center justify-between p-3 rounded-[10px] bg-[#F3F8FB] border border-[#DCE8F0]">
+              <div className="flex items-center gap-2 text-[12px] font-medium text-[#3C566E]">
+                <Sparkles className="w-3.5 h-3.5 text-[#0F74C9]" />
                 <span>{STRINGS.diagnostic.toggleHeatmapButton}</span>
               </div>
               <button
                 type="button"
                 onClick={onToggleHeatmap}
                 className={cn(
-                  "px-2.5 py-1 rounded text-[11px] font-bold transition-all",
+                  "px-3 py-1.5 rounded-[8px] text-[12px] font-semibold transition-all cursor-pointer",
                   isHeatmapActive
-                    ? "bg-clinical-600 text-white shadow-2xs"
-                    : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-100"
+                    ? "bg-[#0F74C9] text-white shadow-2xs"
+                    : "bg-white text-[#3C566E] border border-[#DCE8F0] hover:bg-[#F3F8FB]"
                 )}
                 aria-pressed={isHeatmapActive}
               >
@@ -220,7 +225,7 @@ export default function ChildDiagnosticCard({
 
           {/* Differential Diagnosis Candidate Probabilities */}
           <div className="space-y-2.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#7A91A6] block">
               {STRINGS.diagnostic.differentialBreakdown}
             </span>
 
@@ -230,23 +235,23 @@ export default function ChildDiagnosticCard({
                 const clsSeverity = getSeverityToken(cls.riskLevel);
                 return (
                   <div key={cls.className} className="space-y-1">
-                    <div className="flex items-center justify-between text-[11px]">
+                    <div className="flex items-center justify-between text-[12px]">
                       <span
                         className={cn(
                           "font-medium",
-                          isSelected ? "text-slate-900 font-bold" : "text-slate-600"
+                          isSelected ? "text-[#0B2239] font-bold" : "text-[#3C566E]"
                         )}
                       >
                         {cls.displayName}
                       </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-slate-400">
+                      <div className="flex items-center gap-2 font-mono">
+                        <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]", clsSeverity.badgeClass)}>
                           {clsSeverity.label.split("/")[0].trim()}
                         </span>
                         <span
                           className={cn(
-                            "font-mono text-[11px]",
-                            isSelected ? "font-bold text-slate-900" : "text-slate-400"
+                            "text-[12px]",
+                            isSelected ? "font-bold text-[#0B2239]" : "text-[#7A91A6]"
                           )}
                         >
                           {formatConfidence(cls.probability)}
@@ -261,8 +266,8 @@ export default function ChildDiagnosticCard({
                           isSelected
                             ? clsSeverity.barColor
                             : cls.probability > 0.1
-                            ? "bg-slate-400"
-                            : "bg-slate-200"
+                            ? "bg-[#7A91A6]"
+                            : "bg-[#DCE8F0]"
                         )}
                         style={{ width: `${Math.max(cls.probability * 100, 1.5)}%` }}
                       />
@@ -274,13 +279,13 @@ export default function ChildDiagnosticCard({
           </div>
 
           {/* Timing Strip */}
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[10px] text-slate-400 font-mono">
-            <span className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />
+          <div className="flex items-center justify-between pt-2 border-t border-[#DCE8F0] text-[11px] text-[#7A91A6] font-mono">
+            <span className="flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5" />
               {STRINGS.diagnostic.analysisLatency} {formatLatency(childResult.latencyMs)}
             </span>
-            <span className="flex items-center gap-1">
-              <Activity className="w-3 h-3" />
+            <span className="flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5" />
               {STRINGS.diagnostic.pipelineTotalLatency} {formatLatency(childResult.totalPipelineMs)}
             </span>
           </div>
@@ -288,10 +293,10 @@ export default function ChildDiagnosticCard({
       )}
 
       {diagnosticState === "empty" && (
-        <div className="py-10 text-center border border-dashed border-slate-300 rounded-lg bg-slate-50/60">
-          <Stethoscope className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-          <p className="text-[12px] font-bold text-slate-700">{STRINGS.diagnostic.emptyStateTitle}</p>
-          <p className="text-[11px] text-slate-400 mt-0.5">
+        <div className="py-8 text-center border border-dashed border-[#DCE8F0] rounded-[10px] bg-[#F3F8FB]/60">
+          <Stethoscope className="w-8 h-8 text-[#7A91A6] mx-auto mb-2 opacity-60" />
+          <p className="text-[13px] font-bold text-[#0B2239]">{STRINGS.diagnostic.emptyStateTitle}</p>
+          <p className="text-[12px] text-[#7A91A6] mt-0.5 max-w-xs mx-auto">
             {STRINGS.diagnostic.emptyStateSubtext}
           </p>
         </div>

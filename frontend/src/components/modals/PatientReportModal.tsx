@@ -81,7 +81,7 @@ export default function PatientReportModal({
                 {tenant.departmentName}
               </p>
               <p className="text-[10px] text-slate-400">
-                Facility Code: {tenant.facilityCode} • AE: {tenant.dicomAeTitle}
+                Facility Code: {tenant.facilityCode} • Safe Harbor De-identified
               </p>
             </div>
             <div className="text-right">

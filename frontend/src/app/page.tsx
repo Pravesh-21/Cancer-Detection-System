@@ -11,7 +11,12 @@ import DicomMetadataTab from "@/components/tabs/DicomMetadataTab";
 import SendToPhysicianModal from "@/components/modals/SendToPhysicianModal";
 import PatientReportModal from "@/components/modals/PatientReportModal";
 import AuditLogsModal from "@/components/modals/AuditLogsModal";
-// import Organ3DViewer from "@/components/spatial/Organ3DViewer";
+
+// ── Workflow Components ──────────────────────────────────────────────────────
+import WorkflowTimeline, { type WorkflowStep } from "@/components/workflow/WorkflowTimeline";
+import PatientIntakeForm, { type PatientFormData } from "@/components/workflow/PatientIntakeForm";
+import DoctorInspectionPanel from "@/components/workflow/DoctorInspectionPanel";
+import ReportTransmissionPanel from "@/components/workflow/ReportTransmissionPanel";
 
 import {
   runApiDiagnosis,
@@ -32,54 +37,48 @@ import type {
 } from "@/lib/types";
 import { DEFAULT_TENANT, type TenantBranding } from "@/config/tenant";
 import { STRINGS } from "@/config/strings";
-import { WORKFLOW_STAGES } from "@/config/workflow";
 import { DEFAULT_VIEWPORT_SETTINGS } from "@/config/imaging";
 import { createPreliminaryDicomMetadata, cn } from "@/lib/utils";
-import { ArrowRight, ShieldAlert } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 
 export default function DiagnosticWorkspacePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Tenant / Health ──────────────────────────────────────────────────────
   const [tenant, setTenant] = useState<TenantBranding>(DEFAULT_TENANT);
   const [healthInfo, setHealthInfo] = useState<BackendHealthInfo>({ online: false, status: "offline" });
 
+  // ── Workflow Step State ──────────────────────────────────────────────────
+  const [currentStep, setCurrentStep] = useState<WorkflowStep>(1);
+  const [completedSteps, setCompletedSteps] = useState<Set<WorkflowStep>>(new Set());
+  const [patientData, setPatientData] = useState<PatientFormData | null>(null);
+  const [doctorNotes, setDoctorNotes] = useState<string>("");
+
+  // ── Scan / AI State ──────────────────────────────────────────────────────
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [uploadedFileSize, setUploadedFileSize] = useState<number | null>(null);
-
   const [inferenceStatus, setInferenceStatus] = useState<InferenceStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [result, setResult] = useState<ClinicalSessionResult | null>(null);
   const [dicom, setDicom] = useState<DicomMetadata | null>(null);
   const [overrideDomain, setOverrideDomain] = useState<Domain | null>(null);
 
-  // ── Viewport Control State & Heatmap Overlay ──
+  // ── Viewport Control State & Heatmap Overlay ─────────────────────────────
   const [viewport, setViewport] = useState<ViewportSettings>(DEFAULT_VIEWPORT_SETTINGS);
   const [isHeatmapActive, setIsHeatmapActive] = useState<boolean>(false);
 
-  // ── Bottom Tabs State ──
+  // ── Bottom Tabs State ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<"findings" | "metadata">("findings");
 
-  // ── Modals & Audit Logs State ──
+  // ── Modals & Audit Logs State ────────────────────────────────────────────
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
-  const [isRefreshingHealth, setIsRefreshingHealth] = useState(false);
 
-  // ── Manual Gateway Reconnect / Wake Handler ──
-  const handleRefreshHealth = useCallback(async () => {
-    setIsRefreshingHealth(true);
-    try {
-      const health = await checkBackendHealth();
-      setHealthInfo(health);
-    } finally {
-      setIsRefreshingHealth(false);
-    }
-  }, []);
-
-  // ── Load Tenant Config, Health, & Smart Heartbeat Polling ──
+  // ── Load Tenant Config, Health, & Smart Heartbeat Polling ────────────────
   useEffect(() => {
     let timerId: NodeJS.Timeout | null = null;
     let pollCount = 0;
@@ -88,8 +87,6 @@ export default function DiagnosticWorkspacePage() {
     const check = async () => {
       const health = await checkBackendHealth();
       setHealthInfo(health);
-
-      // Only continue polling if backend is currently warming up/initializing
       if (health.status === "initializing" && pollCount < maxPolls) {
         pollCount++;
         timerId = setTimeout(check, 10000);
@@ -97,21 +94,13 @@ export default function DiagnosticWorkspacePage() {
     };
 
     check();
+    fetchTenantConfig().then(setTenant);
+    fetchAuditLogs().then(setAuditLogs);
 
-    fetchTenantConfig().then((cfg) => {
-      setTenant(cfg);
-    });
-
-    fetchAuditLogs().then((logs) => {
-      setAuditLogs(logs);
-    });
-
-    return () => {
-      if (timerId) clearTimeout(timerId);
-    };
+    return () => { if (timerId) clearTimeout(timerId); };
   }, []);
 
-  // ── Helper to Append Local Audit Log & Sync Server ──
+  // ── Audit Log Helper ─────────────────────────────────────────────────────
   const addAuditEvent = useCallback((action: string, details: string, status: "SUCCESS" | "WARNING" | "INFO" = "SUCCESS") => {
     const newEntry: AuditLogEntry = {
       id: `EVT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
@@ -125,50 +114,36 @@ export default function DiagnosticWorkspacePage() {
     recordClientAuditLog({ actor: "CLINICAL_USER_WORKSTATION", action, details, status });
   }, []);
 
-  // ── Handle Custom File Ingestion by User ──
-  // Auto-populates preliminary DICOM metadata immediately on ingestion!
-  const handleFileUpload = useCallback(
-    (file: File) => {
-      setUploadedFile(file);
-      setUploadedFileName(file.name);
-      setUploadedFileSize(file.size);
+  // ── Step Navigation Helpers ──────────────────────────────────────────────
+  const markStepComplete = useCallback((step: WorkflowStep) => {
+    setCompletedSteps((prev) => new Set([...prev, step]));
+  }, []);
 
-      const objectUrl = URL.createObjectURL(file);
-      setPreviewUrl(objectUrl);
-      setInferenceStatus("idle");
-      setResult(null);
-      setIsHeatmapActive(false);
+  // ── Step 1: Patient Intake Submit ────────────────────────────────────────
+  const handlePatientSubmit = useCallback((data: PatientFormData) => {
+    setPatientData(data);
+    markStepComplete(1);
+    setCurrentStep(2);
+    addAuditEvent("PATIENT_INTAKE", `Patient ${data.fullName} (MRN: ${data.mrn}) registered for diagnostic session.`);
+  }, [markStepComplete, addAuditEvent]);
 
-      // Auto-populate preliminary DICOM metadata immediately on file drop
-      const prelimDicom = createPreliminaryDicomMetadata(file, tenant);
-      setDicom(prelimDicom);
-      setViewport(DEFAULT_VIEWPORT_SETTINGS);
-      setOverrideDomain(null);
+  // ── Step 2: File Ingestion ────────────────────────────────────────────────
+  const handleFileUpload = useCallback((file: File) => {
+    setUploadedFile(file);
+    setUploadedFileName(file.name);
+    setUploadedFileSize(file.size);
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+    setInferenceStatus("idle");
+    setResult(null);
+    setIsHeatmapActive(false);
+    const prelimDicom = createPreliminaryDicomMetadata(file, tenant);
+    setDicom(prelimDicom);
+    setViewport(DEFAULT_VIEWPORT_SETTINGS);
+    setOverrideDomain(null);
+    addAuditEvent("SCAN_INGESTED", `File ${file.name} (${(file.size / 1024).toFixed(1)} KB) ingested into workspace.`);
+  }, [tenant, addAuditEvent]);
 
-      addAuditEvent("SCAN_INGESTED", `File ${file.name} (${(file.size / 1024).toFixed(1)} KB) ingested into workspace.`);
-    },
-    [tenant, addAuditEvent]
-  );
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const urlParams = new URLSearchParams(window.location.search);
-    const sampleParam = urlParams.get("sample");
-    if (sampleParam && !uploadedFile) {
-      fetch(`/samples/${sampleParam}`)
-        .then((res) => {
-          if (!res.ok) throw new Error("Sample not found");
-          return res.blob();
-        })
-        .then((blob) => {
-          const sampleFile = new File([blob], sampleParam, { type: blob.type || "image/jpeg" });
-          handleFileUpload(sampleFile);
-        })
-        .catch((err) => console.warn("Failed to load sample:", err));
-    }
-  }, [handleFileUpload, uploadedFile]);
-
-  // ── Clear Loaded Image ──
   const handleClearImage = useCallback(() => {
     setUploadedFile(null);
     setPreviewUrl(null);
@@ -180,76 +155,58 @@ export default function DiagnosticWorkspacePage() {
     setDicom(null);
     setOverrideDomain(null);
     setIsHeatmapActive(false);
+    // Also un-complete step 2 if we clear scan
+    setCompletedSteps((prev) => { const next = new Set(prev); next.delete(2); next.delete(3); next.delete(4); return next; });
     addAuditEvent("SCAN_PURGED", "Patient radiograph unloaded from viewport.");
   }, [addAuditEvent]);
 
-  // ── Run Diagnostic Pipeline ──
+  // ── Run Diagnostic Pipeline ───────────────────────────────────────────────
   const handleRunDiagnostic = useCallback(async () => {
     if (!uploadedFile) return;
-
     setInferenceStatus("loading");
     setErrorMessage(null);
-
     try {
       const response = await runApiDiagnosis(uploadedFile, uploadedFile.name);
       setResult(response.sessionResult);
       setDicom(response.dicomMetadata);
       setInferenceStatus("complete");
       setErrorMessage(null);
-
+      // Mark step 2 complete when analysis finishes
+      markStepComplete(2);
       addAuditEvent(
         "DIAGNOSTIC_INFERENCE_COMPLETE",
         `Inferred ${response.sessionResult.diagnosticFinding.displayName} (${(response.sessionResult.diagnosticFinding.confidence * 100).toFixed(1)}% confidence) via ${response.sessionResult.domainClassification.predictedDomain.toUpperCase()} model.`
       );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error("Diagnostic execution error:", message);
+      console.warn("Diagnostic execution error:", message);
       setInferenceStatus("error");
       setErrorMessage(message);
       addAuditEvent("INFERENCE_ERROR", `Pipeline error: ${message}`, "WARNING");
     }
+  }, [uploadedFile, addAuditEvent, markStepComplete]);
+
+  // ── Domain Override ───────────────────────────────────────────────────────
+  const handleDomainOverride = useCallback(async (domain: Domain) => {
+    setOverrideDomain(domain);
+    if (!uploadedFile) return;
+    setInferenceStatus("loading");
+    setErrorMessage(null);
+    try {
+      const response = await runApiDiagnosis(uploadedFile, uploadedFile.name, domain);
+      setResult(response.sessionResult);
+      setDicom(response.dicomMetadata);
+      setInferenceStatus("complete");
+      setErrorMessage(null);
+      addAuditEvent("MANUAL_DOMAIN_OVERRIDE", `User redirected study to ${domain.toUpperCase()} domain. Inferred ${response.sessionResult.diagnosticFinding.displayName}.`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setInferenceStatus("error");
+      setErrorMessage(message);
+    }
   }, [uploadedFile, addAuditEvent]);
 
-  // ── Interactive Domain Override ──
-  const handleDomainOverride = useCallback(
-    async (domain: Domain) => {
-      setOverrideDomain(domain);
-      if (!uploadedFile) return;
-
-      setInferenceStatus("loading");
-      setErrorMessage(null);
-
-      try {
-        const response = await runApiDiagnosis(uploadedFile, uploadedFile.name, domain);
-        setResult(response.sessionResult);
-        setDicom(response.dicomMetadata);
-        setInferenceStatus("complete");
-        setErrorMessage(null);
-
-        addAuditEvent(
-          "MANUAL_DOMAIN_OVERRIDE",
-          `User redirected study to ${domain.toUpperCase()} domain. Inferred ${response.sessionResult.diagnosticFinding.displayName}.`
-        );
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error("Domain override error:", message);
-        setInferenceStatus("error");
-        setErrorMessage(message);
-      }
-    },
-    [uploadedFile, addAuditEvent]
-  );
-
-  const activeDomain: Domain | null =
-    overrideDomain ||
-    result?.domainClassification.predictedDomain ||
-    null;
-
-  const isOperational = healthInfo.online && (healthInfo.status === "operational" || healthInfo.modelsInitialized === true);
-  const isWarmingUp = healthInfo.online && !isOperational && healthInfo.status !== "error";
-  const isEngineOffline = !healthInfo.online || healthInfo.status === "error";
-
-  // ── Export JSON Findings ──
+  // ── Export JSON ───────────────────────────────────────────────────────────
   const handleExportMetrics = useCallback(() => {
     if (!result) return;
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(result, null, 2));
@@ -259,219 +216,298 @@ export default function DiagnosticWorkspacePage() {
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
-
     addAuditEvent("FINDINGS_EXPORTED", `Case ${result.sessionId} findings exported as JSON.`);
   }, [result, addAuditEvent]);
 
-  // ── Handlers for Modal Audit Events ──
-  const handlePhysicianDispatched = useCallback(
-    (physician: string, priority: ClinicalPriority) => {
-      addAuditEvent("PHYSICIAN_NOTIFICATION", `Transmitted case to ${physician} (Priority: ${priority.toUpperCase()}).`);
-    },
-    [addAuditEvent]
-  );
+  // ── Modal Audit Events ────────────────────────────────────────────────────
+  const handlePhysicianDispatched = useCallback((physician: string, priority: ClinicalPriority) => {
+    addAuditEvent("PHYSICIAN_NOTIFICATION", `Transmitted case to ${physician} (Priority: ${priority.toUpperCase()}).`);
+  }, [addAuditEvent]);
 
   const handleReportPrinted = useCallback(() => {
     if (!result) return;
     addAuditEvent("REPORT_GENERATED", `Formal PDF report printed/downloaded for case ${result.sessionId}.`);
   }, [result, addAuditEvent]);
 
+  // ── Step 3: Doctor Sign-off ───────────────────────────────────────────────
+  const handleDoctorSignOff = useCallback((notes: string) => {
+    setDoctorNotes(notes);
+    markStepComplete(3);
+    setCurrentStep(4);
+    addAuditEvent("DOCTOR_SIGNOFF", `Attending physician signed off on case${result ? ` ${result.sessionId}` : ""}. Notes: ${notes || "(none)"}`);
+  }, [markStepComplete, addAuditEvent, result]);
+
+  // ── Step 4: New Case Reset ─────────────────────────────────────────────────
+  const handleNewCase = useCallback(() => {
+    setCurrentStep(1);
+    setCompletedSteps(new Set());
+    setPatientData(null);
+    setDoctorNotes("");
+    setUploadedFile(null);
+    setPreviewUrl(null);
+    setUploadedFileName(null);
+    setUploadedFileSize(null);
+    setInferenceStatus("idle");
+    setErrorMessage(null);
+    setResult(null);
+    setDicom(null);
+    setOverrideDomain(null);
+    setIsHeatmapActive(false);
+    addAuditEvent("NEW_CASE_STARTED", "Workspace reset for new patient case.");
+  }, [addAuditEvent]);
+
+  // ── Step 2 → Step 3 progression (after analysis is complete) ─────────────
+  const handleProceedToReview = useCallback(() => {
+    if (result) {
+      markStepComplete(2);
+      setCurrentStep(3);
+    }
+  }, [result, markStepComplete]);
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
-      {/* ── Hospital Header (White-Labelable Slot & Promoted Audit Logs) ── */}
-      <HospitalHeader
-        tenant={tenant}
-        healthInfo={healthInfo}
-        onTriggerUpload={() => fileInputRef.current?.click()}
-        onAuditLogs={() => setIsAuditModalOpen(true)}
-        unreadAuditCount={auditLogs.length}
-        onRefreshHealth={handleRefreshHealth}
-        isRefreshingHealth={isRefreshingHealth}
-      />
+    <div className="min-h-screen flex flex-col bg-[#F3F8FB]">
+      {/* ── CancerLens Clinical Header ── */}
+      <HospitalHeader tenant={tenant} healthInfo={healthInfo} />
 
       {/* ── Main Workspace ── */}
-      <main className="flex-1 max-w-[1780px] w-full mx-auto p-4 md:p-6 space-y-6">
-        {/* ── Declarative Workflow Progression Banner ── */}
-        <div
-          className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-4 py-2.5 rounded-lg bg-white border border-slate-200 shadow-2xs gap-3"
-          role="region"
-          aria-label="Clinical workflow progress"
-        >
-          {/* Dynamic Stages Generated from WORKFLOW_STAGES Array */}
-          <div className="flex items-center gap-2 text-[12px] font-bold text-slate-700 flex-wrap">
-            <span className="text-clinical-700 font-extrabold">{STRINGS.workflow.title}</span>
-            {WORKFLOW_STAGES.map((stage, idx) => {
-              const isStageDone =
-                stage.id === "ingestion"
-                  ? !!uploadedFile
-                  : stage.id === "routing"
-                  ? !!result
-                  : stage.id === "pathology"
-                  ? !!result && inferenceStatus === "complete"
-                  : false;
+      <main className="flex-1 max-w-[1780px] w-full mx-auto p-4 md:p-6 space-y-5">
+        {/* ── Workflow Timeline Navigator ── */}
+        <WorkflowTimeline
+          currentStep={currentStep}
+          completedSteps={completedSteps}
+          onStepClick={(step) => {
+            // Allow navigation to completed steps or current step
+            if (completedSteps.has(step) || step === currentStep) {
+              setCurrentStep(step);
+            }
+          }}
+        />
 
-              return (
-                <div key={stage.id} className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "px-2.5 py-1 rounded transition-colors text-[11px]",
-                      isStageDone
-                        ? "bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs font-extrabold"
-                        : "bg-slate-100 text-slate-600 border border-slate-200"
-                    )}
-                  >
-                    {stage.labelKey}
-                  </span>
-                  {idx < WORKFLOW_STAGES.length - 1 && (
-                    <ArrowRight className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                  )}
+        {/* ══════════════════════════════════════════════
+            STEP 1: Patient Intake
+        ══════════════════════════════════════════════ */}
+        {currentStep === 1 && (
+          <PatientIntakeForm
+            defaultValues={patientData ?? undefined}
+            onSubmit={handlePatientSubmit}
+          />
+        )}
+
+        {/* ══════════════════════════════════════════════
+            STEP 2: Scan & AI Diagnostics (main viewport)
+        ══════════════════════════════════════════════ */}
+        {currentStep === 2 && (
+          <div className="space-y-5">
+            {/* Patient context strip */}
+            {patientData && (
+              <div className="bg-white border border-[#DCE8F0] rounded-[12px] px-4 py-3 flex items-center gap-4 flex-wrap shadow-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#0B2239] to-[#16385C] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+                    {patientData.fullName.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-[13px] font-bold text-[#0B2239]">{patientData.fullName}</span>
                 </div>
-              );
-            })}
-          </div>
+                <span className="text-[#DCE8F0]">|</span>
+                <span className="text-[12px] text-[#3C566E]">Age: <strong>{patientData.age}</strong></span>
+                <span className="text-[#DCE8F0]">|</span>
+                <span className="text-[12px] text-[#3C566E]">Blood: <strong className="font-mono">{patientData.bloodGroup}</strong></span>
+                <span className="text-[#DCE8F0]">|</span>
+                <span className="text-[12px] font-mono text-[#0F74C9] font-bold">{patientData.mrn}</span>
+              </div>
+            )}
 
-          {/* Session ID Telemetry */}
-          <div className="flex items-center gap-3 text-[11px] font-mono text-slate-500">
-            <span>
-              {STRINGS.workflow.sessionPrefix}:{" "}
-              <strong className="text-slate-800">
-                {result?.sessionId || STRINGS.workflow.awaitingSession}
-              </strong>
-            </span>
-          </div>
-        </div>
+            {/* 2-Column Core Viewport Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              {/* Column 1: DICOM Viewer */}
+              <section className="space-y-4">
+                <DicomViewer
+                  previewUrl={previewUrl}
+                  uploadedFileName={uploadedFileName}
+                  uploadedFileSize={uploadedFileSize}
+                  viewport={viewport}
+                  inferenceStatus={inferenceStatus}
+                  fileInputRef={fileInputRef}
+                  isHeatmapActive={isHeatmapActive}
+                  onFileUpload={(file) => { setErrorMessage(null); handleFileUpload(file); }}
+                  onClearImage={handleClearImage}
+                  onViewportChange={setViewport}
+                  onRunDiagnostic={handleRunDiagnostic}
+                  onToggleHeatmap={() => setIsHeatmapActive(!isHeatmapActive)}
+                />
+              </section>
 
-        {/* ── 2-Column Core Viewport Grid (DICOM Viewport | Dual-Stage AI Diagnostic Cards) ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          {/* Column 1: Image Upload & DICOM Radiography Viewport */}
-          <section className="space-y-4">
-            <DicomViewer
-              previewUrl={previewUrl}
-              uploadedFileName={uploadedFileName}
-              uploadedFileSize={uploadedFileSize}
-              viewport={viewport}
-              inferenceStatus={inferenceStatus}
-              isWarmingUp={isWarmingUp}
-              isEngineOffline={isEngineOffline}
-              isWakingUp={isRefreshingHealth}
-              onWakeServer={handleRefreshHealth}
-              fileInputRef={fileInputRef}
-              isHeatmapActive={isHeatmapActive}
-              onFileUpload={(file) => {
-                setErrorMessage(null);
-                handleFileUpload(file);
-              }}
-              onClearImage={handleClearImage}
-              onViewportChange={setViewport}
-              onRunDiagnostic={handleRunDiagnostic}
-              onToggleHeatmap={() => setIsHeatmapActive(!isHeatmapActive)}
-            />
-          </section>
+              {/* Column 2: AI Cards */}
+              <section className="space-y-4">
+                <ParentRouterCard
+                  status={inferenceStatus}
+                  routerResult={result ? result.domainClassification : null}
+                  onSelectDomainOverride={handleDomainOverride}
+                />
 
-          {/* Column 2: Parent Routing & Specialized Child Output */}
-          <section className="space-y-4">
-            <ParentRouterCard
-              status={inferenceStatus}
-              routerResult={result ? result.domainClassification : null}
-              onSelectDomainOverride={handleDomainOverride}
-            />
+                <ChildDiagnosticCard
+                  status={inferenceStatus}
+                  childResult={result ? result.diagnosticFinding : null}
+                  errorMessage={errorMessage}
+                  onRetry={handleRunDiagnostic}
+                  isHeatmapActive={isHeatmapActive}
+                  onToggleHeatmap={() => setIsHeatmapActive(!isHeatmapActive)}
+                />
 
-            <ChildDiagnosticCard
-              status={inferenceStatus}
-              childResult={result ? result.diagnosticFinding : null}
-              errorMessage={errorMessage}
-              onRetry={handleRunDiagnostic}
-              isHeatmapActive={isHeatmapActive}
-              onToggleHeatmap={() => setIsHeatmapActive(!isHeatmapActive)}
-            />
+                <ClinicalActionPanel
+                  status={inferenceStatus}
+                  result={result}
+                  onOpenReportModal={() => setIsReportModalOpen(true)}
+                  onOpenSendModal={() => setIsSendModalOpen(true)}
+                  onExportMetrics={handleExportMetrics}
+                />
 
-            <ClinicalActionPanel
-              status={inferenceStatus}
-              result={result}
-              onOpenReportModal={() => setIsReportModalOpen(true)}
-              onOpenSendModal={() => setIsSendModalOpen(true)}
-              onExportMetrics={handleExportMetrics}
-            />
-          </section>
-        </div>
-
-        {/* ── Bottom Tabs: Clinical Findings & DICOM Metadata ── */}
-        <section className="clinical-card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 bg-slate-50/70">
-            <div className="flex items-center gap-1" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "findings"}
-                onClick={() => setActiveTab("findings")}
-                className={cn(
-                  "flex items-center gap-2 py-3 px-4 text-[12px] font-bold border-b-2 transition-all cursor-pointer",
-                  activeTab === "findings"
-                    ? "border-clinical-600 text-clinical-700 bg-white shadow-2xs"
-                    : "border-transparent text-slate-500 hover:text-slate-800"
+                {/* Proceed to Review CTA (shown only when analysis is complete) */}
+                {inferenceStatus === "complete" && result && (
+                  <div className="animate-fade-rise">
+                    <button
+                      type="button"
+                      id="proceed-to-review-btn"
+                      onClick={handleProceedToReview}
+                      className="w-full btn-clinical bg-gradient-to-r from-[#059669] to-[#0E9F8E] text-white font-bold py-3 rounded-[12px] shadow-[0_3px_12px_rgba(14,159,142,0.3)] hover:from-[#047857] hover:to-[#0A8F7E] cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>Proceed to Doctor's Review</span>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                    </button>
+                  </div>
                 )}
-              >
-                {STRINGS.tabs.findingsTabTitle}
-              </button>
-
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "metadata"}
-                onClick={() => setActiveTab("metadata")}
-                className={cn(
-                  "flex items-center gap-2 py-3 px-4 text-[12px] font-bold border-b-2 transition-all cursor-pointer",
-                  activeTab === "metadata"
-                    ? "border-clinical-600 text-clinical-700 bg-white shadow-2xs"
-                    : "border-transparent text-slate-500 hover:text-slate-800"
-                )}
-              >
-                {STRINGS.tabs.metadataTabTitle}
-                {dicom?.isPreliminary && (
-                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                )}
-              </button>
+              </section>
             </div>
 
-            <span className="text-[11px] text-slate-400 font-medium hidden md:inline">
-              {tenant.facilityCode}
-            </span>
-          </div>
+            {/* Bottom Tabs: Findings & Metadata */}
+            <section className="clinical-card overflow-hidden">
+              <div className="flex items-center justify-between border-b border-[#DCE8F0] px-4 bg-gradient-to-r from-[#F0F7FD] via-white to-[#F0FAF9]">
+                <div className="flex items-center gap-2" role="tablist" aria-label="Workstation detail tabs">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === "findings"}
+                    onClick={() => setActiveTab("findings")}
+                    className={cn(
+                      "relative py-3.5 px-4 text-[13px] font-bold transition-all cursor-pointer rounded-t-[8px]",
+                      activeTab === "findings"
+                        ? "text-[#0F74C9] bg-white shadow-2xs"
+                        : "text-[#7A91A6] hover:text-[#0B2239]"
+                    )}
+                  >
+                    {STRINGS.tabs.findingsTabTitle}
+                    {activeTab === "findings" && (
+                      <span className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-[#0F74C9] to-[#0E9F8E] rounded-t-full" aria-hidden="true" />
+                    )}
+                  </button>
 
-          <div className="p-5">
-            {activeTab === "findings" && <FindingsTab result={result} />}
-            {activeTab === "metadata" && (
-              <DicomMetadataTab metadata={dicom} tenant={tenant} />
-            )}
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === "metadata"}
+                    onClick={() => setActiveTab("metadata")}
+                    className={cn(
+                      "relative py-3.5 px-4 text-[13px] font-bold transition-all cursor-pointer flex items-center gap-2 rounded-t-[8px]",
+                      activeTab === "metadata"
+                        ? "text-[#0F74C9] bg-white shadow-2xs"
+                        : "text-[#7A91A6] hover:text-[#0B2239]"
+                    )}
+                  >
+                    {STRINGS.tabs.metadataTabTitle}
+                    {dicom?.isPreliminary && (
+                      <span className="w-2 h-2 rounded-full bg-[#0F74C9] animate-pulse" />
+                    )}
+                    {activeTab === "metadata" && (
+                      <span className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-[#0F74C9] to-[#0E9F8E] rounded-t-full" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
+
+                <span className="text-[11px] font-mono font-bold text-[#0F74C9] bg-[#EBF4FC] border border-[#BAE6FD] px-2.5 py-1 rounded-[6px] hidden md:inline">
+                  {tenant.facilityCode}
+                </span>
+              </div>
+
+              <div className="p-6">
+                {activeTab === "findings" && <FindingsTab result={result} />}
+                {activeTab === "metadata" && <DicomMetadataTab metadata={dicom} tenant={tenant} />}
+              </div>
+            </section>
           </div>
-        </section>
+        )}
+
+        {/* ══════════════════════════════════════════════
+            STEP 3: Doctor's Review & Sign-off
+        ══════════════════════════════════════════════ */}
+        {currentStep === 3 && patientData && result && (
+          <DoctorInspectionPanel
+            patient={patientData}
+            result={result}
+            onBack={() => setCurrentStep(2)}
+            onSignOff={handleDoctorSignOff}
+          />
+        )}
+
+        {/* Fallback: if step 3 reached without result, redirect back */}
+        {currentStep === 3 && (!patientData || !result) && (
+          <div className="text-center py-12 text-[#7A91A6]">
+            <p className="font-semibold">No diagnostic result found. Please complete the scan step first.</p>
+            <button
+              type="button"
+              onClick={() => setCurrentStep(2)}
+              className="mt-4 px-5 py-2.5 rounded-[10px] bg-[#0F74C9] text-white font-bold text-[13px] cursor-pointer"
+            >
+              ← Back to Scan
+            </button>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════
+            STEP 4: Report Transmission
+        ══════════════════════════════════════════════ */}
+        {currentStep === 4 && patientData && result && (
+          <ReportTransmissionPanel
+            patient={patientData}
+            result={result}
+            doctorNotes={doctorNotes}
+            onBack={() => setCurrentStep(3)}
+            onNewCase={handleNewCase}
+          />
+        )}
+
+        {currentStep === 4 && (!patientData || !result) && (
+          <div className="text-center py-12 text-[#7A91A6]">
+            <p className="font-semibold">Workflow incomplete. Please restart from Step 1.</p>
+            <button type="button" onClick={handleNewCase} className="mt-4 px-5 py-2.5 rounded-[10px] bg-[#0F74C9] text-white font-bold text-[13px] cursor-pointer">
+              Start New Case
+            </button>
+          </div>
+        )}
       </main>
 
-      {/* ── Persistent Non-Dismissible Regulatory & Compliance Footer ── */}
+      {/* ── Regulatory Footer ── */}
       <footer
-        className="bg-white border-t border-slate-200 py-3.5 px-4 md:px-6 text-[11px] text-slate-600 mt-auto"
+        className="bg-white border-t border-[#DCE8F0] py-3.5 px-4 md:px-6 text-[12px] text-[#3C566E] mt-auto shadow-[0_-1px_4px_rgba(11,34,57,0.02)]"
         role="contentinfo"
       >
-        <div className="max-w-[1680px] mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-slate-700">
-            <ShieldAlert className="w-4 h-4 text-amber-600 flex-shrink-0" />
-            <span className="font-semibold text-slate-900">
+        <div className="max-w-[1780px] mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-[#0B2239]">
+            <span className="p-1 rounded-[6px] bg-[#FEF9EE] border border-[#FBE3B5] text-[#C98A0A] flex items-center justify-center">
+              <ShieldAlert className="w-4 h-4 text-[#C98A0A] flex-shrink-0" />
+            </span>
+            <span className="font-bold text-[#0B2239]">
               {STRINGS.footer.regulatoryNotice}
             </span>
-            <span className="hidden lg:inline text-slate-500">
+            <span className="hidden lg:inline text-[#7A91A6]">
               — {tenant.regulatoryDisclaimer}
             </span>
           </div>
 
-          <div className="flex items-center gap-4 text-slate-500 font-mono text-[10px]">
-            <span>
-              {STRINGS.footer.modelVersionLabel}{" "}
-              <strong className="text-slate-800">{tenant.modelVersion}</strong>
+          <div className="flex items-center gap-3 font-mono text-[11px]">
+            <span className="bg-[#0B2239] text-[#7DD3FC] px-2.5 py-1 rounded-[6px] border border-[#16385C] shadow-2xs">
+              Model: <strong className="text-white">{tenant.modelVersion}</strong>
             </span>
-            <span>•</span>
-            <span>
-              {STRINGS.footer.lastValidatedLabel}{" "}
-              <strong className="text-slate-800">{tenant.lastValidatedDate}</strong>
+            <span className="bg-[#F3F8FB] text-[#3C566E] border border-[#DCE8F0] px-2.5 py-1 rounded-[6px]">
+              Validated: <strong className="text-[#0B2239]">{tenant.lastValidatedDate}</strong>
             </span>
           </div>
         </div>

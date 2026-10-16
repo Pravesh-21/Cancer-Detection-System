@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Database, ShieldCheck, Copy, Check, Clock } from "lucide-react";
+import { Database, ShieldCheck, Copy, Check, Clock, UserCheck, Cpu } from "lucide-react";
 import type { DicomMetadata } from "@/lib/types";
 import type { TenantBranding } from "@/config/tenant";
 import { STRINGS } from "@/config/strings";
@@ -16,10 +16,10 @@ export default function DicomMetadataTab({ metadata, tenant }: DicomMetadataTabP
 
   if (!metadata) {
     return (
-      <div className="py-12 text-center text-slate-400">
-        <Database className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-        <p className="text-[13px] font-bold text-slate-600">{STRINGS.tabs.emptyMetadataTitle}</p>
-        <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+      <div className="py-12 text-center text-[#7A91A6]">
+        <Database className="w-8 h-8 mx-auto mb-2 text-[#7A91A6] opacity-60" />
+        <p className="text-[14px] font-bold text-[#0B2239]">{STRINGS.tabs.emptyMetadataTitle}</p>
+        <p className="text-[12px] text-[#7A91A6] mt-1 max-w-sm mx-auto">
           {STRINGS.tabs.emptyMetadataPrompt}
         </p>
       </div>
@@ -57,45 +57,52 @@ export default function DicomMetadataTab({ metadata, tenant }: DicomMetadataTabP
   ];
 
   return (
-    <div className="space-y-4 animate-fade-in" role="tabpanel" aria-label={STRINGS.tabs.metadataTabTitle}>
-      {/* ── Security & De-identification Banner ── */}
-      <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-50/80 border border-emerald-300">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-700 flex-shrink-0" />
-          <span className="text-[11px] font-semibold text-emerald-950">
+    <div className="space-y-4 animate-fade-rise" role="tabpanel" aria-label={STRINGS.tabs.metadataTabTitle}>
+      {/* ── Security & De-identification Banner: Dark & Light Contrast ── */}
+      <div className="flex items-center justify-between p-3.5 rounded-[10px] bg-gradient-to-r from-[#F0FAF9] to-white border border-[#BCE8E3] shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-[8px] bg-gradient-to-br from-[#0B2239] to-[#07131F] border border-[#16385C] flex items-center justify-center text-[#0E9F8E] shadow-xs flex-shrink-0">
+            <ShieldCheck className="w-3.5 h-3.5" />
+          </div>
+          <span className="text-[12px] font-bold text-[#0B2239]">
             {tenant.anonymizationProtocol}
           </span>
         </div>
-        <span className="text-[10px] font-mono font-bold text-emerald-800 uppercase bg-white/80 px-2 py-0.5 rounded border border-emerald-200">
-          AE: {tenant.dicomAeTitle}
+        <span className="text-[10px] font-mono font-bold text-[#0E9F8E] uppercase bg-[#0B2239] px-2.5 py-1 rounded-[6px] border border-[#16385C] shadow-2xs">
+          DE-IDENTIFIED STUDY
         </span>
       </div>
 
       {/* Preliminary Ingestion Notice */}
       {metadata.isPreliminary && (
-        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-[11px]">
-          <Clock className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+        <div className="flex items-center gap-2 p-3 rounded-[10px] bg-[#F0F7FD] border border-[#BAE6FD] text-[#0F74C9] text-[12px] font-medium">
+          <Clock className="w-4 h-4 text-[#0F74C9] flex-shrink-0" />
           <span>{STRINGS.tabs.preliminaryNotice}</span>
         </div>
       )}
 
       {/* ── Patient Demographics Table ── */}
-      <div className="clinical-card p-4 space-y-2">
-        <span className="section-header">{STRINGS.tabs.demographicsSection}</span>
-        <div className="divide-y divide-slate-100 text-[11px]">
+      <div className="clinical-card p-5 space-y-3 border-l-4 border-l-[#0F74C9]">
+        <div className="flex items-center gap-2">
+          <UserCheck className="w-4 h-4 text-[#0F74C9]" />
+          <span className="text-[12px] font-bold uppercase tracking-wider text-[#0B2239]">
+            {STRINGS.tabs.demographicsSection}
+          </span>
+        </div>
+        <div className="divide-y divide-[#DCE8F0] text-[12px]">
           {patientTags.map((row) => (
-            <div key={row.key} className="py-2 flex items-center justify-between gap-4">
-              <span className="text-slate-500 font-medium">{row.label}</span>
-              <div className="flex items-center gap-1.5 font-mono text-slate-900 font-semibold">
+            <div key={row.key} className="py-2.5 flex items-center justify-between gap-4">
+              <span className="text-[#3C566E] font-medium">{row.label}</span>
+              <div className="flex items-center gap-2 font-mono text-[#0B2239] font-medium">
                 <span className="truncate max-w-[320px]">{row.value}</span>
                 <button
                   type="button"
                   onClick={() => handleCopy(row.key, row.value)}
-                  className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition-colors"
+                  className="p-1 text-[#7A91A6] hover:text-[#0B2239] rounded-[6px] hover:bg-[#F3F8FB] transition-colors cursor-pointer"
                   title="Copy tag value"
                   aria-label={`Copy ${row.label}`}
                 >
-                  {copiedKey === row.key ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  {copiedKey === row.key ? <Check className="w-3.5 h-3.5 text-[#0E9F8E]" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
               </div>
             </div>
@@ -104,22 +111,27 @@ export default function DicomMetadataTab({ metadata, tenant }: DicomMetadataTabP
       </div>
 
       {/* ── Acquisition & Protocol Parameters ── */}
-      <div className="clinical-card p-4 space-y-2">
-        <span className="section-header">{STRINGS.tabs.acquisitionSection}</span>
-        <div className="divide-y divide-slate-100 text-[11px]">
+      <div className="clinical-card p-5 space-y-3 border-l-4 border-l-[#0E9F8E]">
+        <div className="flex items-center gap-2">
+          <Cpu className="w-4 h-4 text-[#0E9F8E]" />
+          <span className="text-[12px] font-bold uppercase tracking-wider text-[#0B2239]">
+            {STRINGS.tabs.acquisitionSection}
+          </span>
+        </div>
+        <div className="divide-y divide-[#DCE8F0] text-[12px]">
           {acquisitionTags.map((row) => (
-            <div key={row.key} className="py-2 flex items-center justify-between gap-4">
-              <span className="text-slate-500 font-medium">{row.label}</span>
-              <div className="flex items-center gap-1.5 font-mono text-slate-900 font-semibold">
+            <div key={row.key} className="py-2.5 flex items-center justify-between gap-4">
+              <span className="text-[#3C566E] font-medium">{row.label}</span>
+              <div className="flex items-center gap-2 font-mono text-[#0B2239] font-medium">
                 <span className="truncate max-w-[320px]">{row.value}</span>
                 <button
                   type="button"
                   onClick={() => handleCopy(row.key, row.value)}
-                  className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition-colors"
+                  className="p-1 text-[#7A91A6] hover:text-[#0B2239] rounded-[6px] hover:bg-[#F3F8FB] transition-colors cursor-pointer"
                   title="Copy tag value"
                   aria-label={`Copy ${row.label}`}
                 >
-                  {copiedKey === row.key ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  {copiedKey === row.key ? <Check className="w-3.5 h-3.5 text-[#0E9F8E]" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
               </div>
             </div>

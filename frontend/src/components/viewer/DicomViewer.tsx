@@ -18,7 +18,6 @@ import {
   Sliders,
   Trash2,
   Sparkles,
-  RotateCw,
 } from "lucide-react";
 import { cn, formatFileSize } from "@/lib/utils";
 import type { ViewportSettings, InferenceStatus } from "@/lib/types";
@@ -37,10 +36,6 @@ interface DicomViewerProps {
   inferenceStatus: InferenceStatus;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   isHeatmapActive?: boolean;
-  isWarmingUp?: boolean;
-  isEngineOffline?: boolean;
-  isWakingUp?: boolean;
-  onWakeServer?: () => void;
   onFileUpload: (file: File) => void;
   onClearImage: () => void;
   onViewportChange: (settings: ViewportSettings) => void;
@@ -56,10 +51,6 @@ export default function DicomViewer({
   inferenceStatus,
   fileInputRef,
   isHeatmapActive = false,
-  isWarmingUp = false,
-  isEngineOffline = false,
-  isWakingUp = false,
-  onWakeServer,
   onFileUpload,
   onClearImage,
   onViewportChange,
@@ -143,24 +134,25 @@ export default function DicomViewer({
 
   return (
     <div
-      className="clinical-card p-4 space-y-4"
+      className="clinical-card p-5 space-y-4 overflow-hidden"
       role="region"
       aria-label={STRINGS.viewport.title}
     >
-      {/* ── Stage 1 Header ── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-clinical-100 text-clinical-700 font-bold text-[12px] flex items-center justify-center">
-            1
-          </span>
-          <div>
-            <h2 className="text-[13px] font-bold text-slate-900 leading-tight">
-              {STRINGS.viewport.title}
-            </h2>
-            <p className="text-[11px] text-slate-500">
-              {STRINGS.viewport.subtitle}
-            </p>
+      {/* Top Card Color Accent Line */}
+      <div className="h-[3px] bg-gradient-to-r from-[#0F74C9] via-[#0E9F8E] to-transparent -mx-5 -mt-5 mb-4 rounded-t-[16px]" />
+
+      {/* ── Viewport Header: Dark & Light Contrast ── */}
+      <div className="flex items-center justify-between pb-1">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-[8px] bg-gradient-to-br from-[#0B2239] to-[#07131F] border border-[#16385C] flex items-center justify-center text-[#38BDF8] shadow-xs flex-shrink-0">
+            <ImageIcon className="w-3.5 h-3.5" />
           </div>
+          <h2 className="text-[16px] font-bold text-[#0B2239] tracking-tight">
+            Radiological Scan Viewport
+          </h2>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#0F74C9] bg-[#EBF4FC] border border-[#BAE6FD] px-2 py-0.5 rounded-[6px]">
+            PACS Display
+          </span>
         </div>
 
         {hasImage && (
@@ -168,20 +160,20 @@ export default function DicomViewer({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold text-clinical-700 bg-clinical-50 border border-clinical-200 hover:bg-clinical-100 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-[12px] font-semibold text-[#0F74C9] bg-[#F3F8FB] border border-[#DCE8F0] hover:bg-[#E8F2FA] transition-colors cursor-pointer"
               aria-label={STRINGS.viewport.replaceButton}
             >
-              <Upload className="w-3 h-3" />
+              <Upload className="w-3.5 h-3.5" />
               <span>{STRINGS.viewport.replaceButton}</span>
             </button>
             <button
               type="button"
               onClick={onClearImage}
-              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+              className="p-2 rounded-[10px] text-[#7A91A6] hover:text-[#C8353B] hover:bg-[#FDF2F2] transition-colors cursor-pointer"
               title={STRINGS.viewport.removeButton}
               aria-label={STRINGS.viewport.removeButton}
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="w-4 h-4" />
             </button>
           </div>
         )}
@@ -189,7 +181,7 @@ export default function DicomViewer({
 
       {/* Validation Alert */}
       {validationError && (
-        <div className="p-2.5 rounded bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-medium animate-fade-in">
+        <div className="p-3 rounded-[10px] bg-[#FDF2F2] border border-[#F8B4B7] text-[#C8353B] text-[12px] font-medium animate-fade-rise">
           {validationError}
         </div>
       )}
@@ -197,12 +189,12 @@ export default function DicomViewer({
       {/* ── Radiography Viewport / Drag & Drop Zone ── */}
       <div
         className={cn(
-          "relative radiograph-viewer rounded-lg overflow-hidden border w-full flex items-center justify-center transition-all",
-          hasImage ? "border-slate-800 bg-slate-950" : "border-dashed border-slate-300 bg-slate-50/70",
+          "relative radiograph-viewer overflow-hidden w-full flex items-center justify-center transition-all",
           isFullscreen
             ? "fixed inset-0 z-50 rounded-none border-none h-full w-full"
-            : "h-[340px] max-h-[340px]"
+            : "h-[500px] min-h-[460px] lg:h-[560px]"
         )}
+        style={{ backgroundColor: "#07131F" }}
         ref={viewerRef}
         tabIndex={0}
         role="figure"
@@ -211,14 +203,14 @@ export default function DicomViewer({
         {/* HUD Viewport Controls (Visible when image is loaded) */}
         {hasImage && (
           <div
-            className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1 bg-slate-900/85 backdrop-blur-md rounded-lg p-1 border border-white/10 shadow-lg"
+            className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-[#0B2239]/90 backdrop-blur-md rounded-[10px] p-1 border border-white/10 shadow-lg"
             role="toolbar"
             aria-label="Image manipulation tools"
           >
             <button
               type="button"
               onClick={() => updateViewport({ zoom: Math.min(viewport.zoom + 0.2, 3) })}
-              className="p-1.5 rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+              className="p-1.5 rounded-[8px] text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               title="Zoom In (+)"
               aria-label="Zoom In"
             >
@@ -227,7 +219,7 @@ export default function DicomViewer({
             <button
               type="button"
               onClick={() => updateViewport({ zoom: Math.max(viewport.zoom - 0.2, 0.6) })}
-              className="p-1.5 rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+              className="p-1.5 rounded-[8px] text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               title="Zoom Out (-)"
               aria-label="Zoom Out"
             >
@@ -237,8 +229,8 @@ export default function DicomViewer({
               type="button"
               onClick={() => updateViewport({ invert: !viewport.invert })}
               className={cn(
-                "p-1.5 rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors",
-                viewport.invert && "bg-clinical-600 text-white"
+                "p-1.5 rounded-[8px] text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer",
+                viewport.invert && "bg-[#0F74C9] text-white"
               )}
               title={STRINGS.viewport.invertLut}
               aria-label={STRINGS.viewport.invertLut}
@@ -250,8 +242,8 @@ export default function DicomViewer({
               type="button"
               onClick={() => setShowAdjustments(!showAdjustments)}
               className={cn(
-                "p-1.5 rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors",
-                showAdjustments && "bg-slate-700 text-white"
+                "p-1.5 rounded-[8px] text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer",
+                showAdjustments && "bg-white/20 text-white"
               )}
               title={STRINGS.viewport.toggleAdjustments}
               aria-label={STRINGS.viewport.toggleAdjustments}
@@ -262,7 +254,7 @@ export default function DicomViewer({
             <button
               type="button"
               onClick={resetViewport}
-              className="p-1.5 rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+              className="p-1.5 rounded-[8px] text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               title={STRINGS.viewport.resetViewport}
               aria-label={STRINGS.viewport.resetViewport}
             >
@@ -276,10 +268,10 @@ export default function DicomViewer({
                   type="button"
                   onClick={onToggleHeatmap}
                   className={cn(
-                    "p-1.5 rounded transition-colors",
+                    "p-1.5 rounded-[8px] transition-colors cursor-pointer",
                     isHeatmapActive
-                      ? "bg-amber-500 text-slate-950 font-bold"
-                      : "text-slate-300 hover:text-white hover:bg-white/10"
+                      ? "bg-[#C98A0A] text-[#07131F] font-bold"
+                      : "text-white/70 hover:text-white hover:bg-white/10"
                   )}
                   title={STRINGS.viewport.toggleHeatmap}
                   aria-label={STRINGS.viewport.toggleHeatmap}
@@ -294,7 +286,7 @@ export default function DicomViewer({
             <button
               type="button"
               onClick={() => setIsFullscreen(!isFullscreen)}
-              className="p-1.5 rounded text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+              className="p-1.5 rounded-[8px] text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               title={STRINGS.viewport.toggleFullscreen}
               aria-label={STRINGS.viewport.toggleFullscreen}
             >
@@ -306,18 +298,18 @@ export default function DicomViewer({
         {/* Anatomical Orientation Markers */}
         {hasImage && (
           <>
-            <span className="absolute top-2 left-2.5 z-10 text-[10px] font-mono text-white/40 select-none font-bold">A</span>
-            <span className="absolute bottom-2 left-2.5 z-10 text-[10px] font-mono text-white/40 select-none font-bold">P</span>
-            <span className="absolute top-2 left-7 z-10 text-[10px] font-mono text-white/40 select-none font-bold">L</span>
-            <span className="absolute top-2 right-14 z-10 text-[10px] font-mono text-white/40 select-none font-bold">R</span>
+            <span className="absolute top-3 left-3 z-10 text-[11px] font-mono text-white/40 select-none font-bold">A</span>
+            <span className="absolute bottom-3 left-3 z-10 text-[11px] font-mono text-white/40 select-none font-bold">P</span>
+            <span className="absolute top-3 left-8 z-10 text-[11px] font-mono text-white/40 select-none font-bold">L</span>
+            <span className="absolute top-3 right-16 z-10 text-[11px] font-mono text-white/40 select-none font-bold">R</span>
           </>
         )}
 
         {/* User Image Display */}
         {hasImage ? (
           <div
-            className="w-full h-full flex items-center justify-center p-2 overflow-hidden relative"
-            style={{ transform: `scale(${viewport.zoom})`, transition: "transform 0.15s ease" }}
+            className="w-full h-full flex items-center justify-center p-3 overflow-hidden relative"
+            style={{ transform: `scale(${viewport.zoom})`, transition: "transform 0.15s ease-out" }}
           >
             <img
               src={previewUrl!}
@@ -333,21 +325,21 @@ export default function DicomViewer({
                 aria-hidden="true"
               >
                 <div
-                  className="w-48 h-48 rounded-full blur-2xl opacity-70 animate-pulse"
+                  className="w-52 h-52 rounded-full blur-2xl opacity-75 animate-pulse"
                   style={{
                     background:
-                      "radial-gradient(circle, rgba(239,68,68,0.85) 0%, rgba(245,158,11,0.65) 45%, rgba(59,130,246,0.3) 75%, transparent 100%)",
+                      "radial-gradient(circle, rgba(200,53,59,0.85) 0%, rgba(201,138,10,0.65) 45%, rgba(15,116,201,0.3) 75%, transparent 100%)",
                   }}
                 />
               </div>
             )}
           </div>
         ) : (
-          /* Empty Drag & Drop Ingestion Zone */
+          /* Empty Drag & Drop Ingestion Zone: High contrast, readable, calm modern hospital feel */
           <div
             className={cn(
-              "w-full h-full flex flex-col items-center justify-center p-6 text-center cursor-pointer transition-all",
-              isDragOver ? "bg-clinical-50/70 border-2 border-clinical-600" : "hover:bg-slate-100/70"
+              "w-full h-full m-3 dropzone-container flex flex-col items-center justify-center p-8 text-center cursor-pointer",
+              isDragOver && "is-dragover"
             )}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -363,15 +355,27 @@ export default function DicomViewer({
             role="button"
             aria-label={STRINGS.viewport.dropzoneTitle}
           >
-            <div className="w-12 h-12 rounded-full bg-clinical-50 text-clinical-600 flex items-center justify-center mb-3 shadow-2xs">
-              <Upload className="w-6 h-6" />
+            <div className="w-14 h-14 rounded-[14px] bg-[#102A43] border border-[#244260] text-[#0E9F8E] flex items-center justify-center mb-4 shadow-sm transition-transform duration-200 hover:scale-105">
+              <Upload className="w-7 h-7 text-[#0E9F8E]" />
             </div>
-            <h3 className="text-[13px] font-bold text-slate-800">
+
+            {/* Title: High Contrast Crisp Cool White #F3F8FB (Fixes dark title on dark dropzone!) */}
+            <h3 className="text-[18px] font-bold text-[#F3F8FB] tracking-tight leading-tight">
               {STRINGS.viewport.dropzoneTitle}
             </h3>
-            <p className="text-[11px] text-slate-500 mt-1 max-w-xs">
-              {STRINGS.viewport.supportedFormatsNotice}
+
+            {/* Subtext: Crisp Muted Blue-Gray #7A91A6 */}
+            <p className="text-[13px] text-[#7A91A6] mt-1.5 max-w-md leading-relaxed font-normal">
+              Drag and drop clinical scans here, or browse files from your workstation.
             </p>
+
+            {/* Supported Formats Pills */}
+            <div className="flex items-center gap-2 mt-4 text-[11px] font-mono text-[#DCE8F0] font-medium flex-wrap justify-center">
+              <span className="px-2.5 py-1 rounded-[6px] bg-[#102A43] border border-[#244260]">DICOM (.dcm)</span>
+              <span className="px-2.5 py-1 rounded-[6px] bg-[#102A43] border border-[#244260]">PNG</span>
+              <span className="px-2.5 py-1 rounded-[6px] bg-[#102A43] border border-[#244260]">JPEG</span>
+              <span className="px-2.5 py-1 rounded-[6px] bg-[#102A43] border border-[#244260]">TIFF</span>
+            </div>
 
             <button
               type="button"
@@ -379,26 +383,35 @@ export default function DicomViewer({
                 e.stopPropagation();
                 fileInputRef.current?.click();
               }}
-              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-[12px] font-bold bg-clinical-600 hover:bg-clinical-700 text-white shadow-xs transition-all active:scale-[0.98]"
+              className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-[10px] text-[13px] font-semibold bg-[#0F74C9] hover:bg-[#0A5BA8] text-white shadow-[0_1px_3px_rgba(15,116,201,0.3)] transition-all cursor-pointer"
             >
-              <Upload className="w-3.5 h-3.5" />
+              <Upload className="w-4 h-4" />
               <span>{STRINGS.viewport.chooseFileButton}</span>
             </button>
           </div>
         )}
 
-        {/* Loading Overlay */}
+        {/* Teal Scan-Line Sweep Overlay (While Analysis Runs) */}
         {isLoading && (
-          <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex flex-col items-center justify-center gap-2 z-30 animate-fade-in">
-            <Loader2 className="w-8 h-8 text-clinical-400 animate-spin" />
-            <p className="text-[12px] text-slate-200 font-bold">{STRINGS.viewport.analyzingPrompt}</p>
-            <p className="text-[10px] text-slate-400">{STRINGS.viewport.analyzingSubtext}</p>
-          </div>
+          <>
+            <div className="scanline-sweep-overlay" aria-hidden="true" />
+            <div className="absolute inset-0 bg-[#07131F]/80 backdrop-blur-xs flex flex-col items-center justify-center gap-3 z-30 animate-fade-rise">
+              <div className="w-12 h-12 rounded-full bg-[#0E9F8E]/10 border border-[#0E9F8E]/30 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 text-[#0E9F8E] animate-spin" />
+              </div>
+              <p className="text-[14px] text-[#F3F8FB] font-bold tracking-tight">
+                {STRINGS.viewport.analyzingPrompt}
+              </p>
+              <p className="text-[12px] text-[#7A91A6]">
+                {STRINGS.viewport.analyzingSubtext}
+              </p>
+            </div>
+          </>
         )}
 
         {/* Zoom Ratio Indicator */}
         {hasImage && (
-          <div className="absolute bottom-2 right-2.5 z-10 text-[9px] font-mono text-white/50 select-none">
+          <div className="absolute bottom-3 right-3 z-10 text-[10px] font-mono text-white/50 select-none">
             {(viewport.zoom * 100).toFixed(0)}%
           </div>
         )}
@@ -406,13 +419,13 @@ export default function DicomViewer({
 
       {/* ── Collapsible Brightness & Contrast Controls ── */}
       {hasImage && showAdjustments && (
-        <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5 animate-fade-in">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-              <Sun className="w-3.5 h-3.5 text-slate-500" />
+        <div className="p-3.5 bg-[#F3F8FB] border border-[#DCE8F0] rounded-[10px] space-y-3 animate-fade-rise">
+          <div className="flex items-center justify-between text-[12px]">
+            <span className="font-semibold text-[#0B2239] flex items-center gap-1.5">
+              <Sun className="w-3.5 h-3.5 text-[#7A91A6]" />
               {STRINGS.viewport.brightnessLabel}
             </span>
-            <span className="font-mono text-slate-500 text-[10px]">{viewport.brightness}%</span>
+            <span className="font-mono text-[#3C566E] text-[11px]">{viewport.brightness}%</span>
           </div>
           <input
             type="range"
@@ -424,12 +437,12 @@ export default function DicomViewer({
             aria-label={STRINGS.viewport.brightnessLabel}
           />
 
-          <div className="flex items-center justify-between text-[11px] pt-1">
-            <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-              <Contrast className="w-3.5 h-3.5 text-slate-500" />
+          <div className="flex items-center justify-between text-[12px] pt-1">
+            <span className="font-semibold text-[#0B2239] flex items-center gap-1.5">
+              <Contrast className="w-3.5 h-3.5 text-[#7A91A6]" />
               {STRINGS.viewport.contrastLabel}
             </span>
-            <span className="font-mono text-slate-500 text-[10px]">{viewport.contrast}%</span>
+            <span className="font-mono text-[#3C566E] text-[11px]">{viewport.contrast}%</span>
           </div>
           <input
             type="range"
@@ -445,13 +458,13 @@ export default function DicomViewer({
 
       {/* ── Ingested File Metadata Pill ── */}
       {uploadedFileName && (
-        <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[11px]">
+        <div className="flex items-center justify-between px-3.5 py-2 bg-[#F3F8FB] border border-[#DCE8F0] rounded-[10px] text-[12px]">
           <div className="flex items-center gap-2 truncate">
-            <ImageIcon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-            <span className="font-medium text-slate-700 truncate">{uploadedFileName}</span>
+            <ImageIcon className="w-4 h-4 text-[#7A91A6] flex-shrink-0" />
+            <span className="font-medium text-[#0B2239] truncate">{uploadedFileName}</span>
           </div>
           {uploadedFileSize && (
-            <span className="font-mono text-[10px] text-slate-400 flex-shrink-0">
+            <span className="font-mono text-[11px] text-[#7A91A6] flex-shrink-0">
               {formatFileSize(uploadedFileSize)}
             </span>
           )}
@@ -461,44 +474,31 @@ export default function DicomViewer({
       {/* ── Primary Diagnostic Action Execution Button ── */}
       <button
         type="button"
-        onClick={isEngineOffline ? onWakeServer : onRunDiagnostic}
-        disabled={isLoading || isWarmingUp || (isEngineOffline ? isWakingUp : !hasImage)}
+        onClick={onRunDiagnostic}
+        disabled={isLoading || !hasImage}
+        title={!hasImage ? "Upload scan first to run analysis" : undefined}
         className={cn(
-          "w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-bold text-[13px] transition-all shadow-xs",
-          hasImage && !isLoading && !isWarmingUp && !isEngineOffline
-            ? "bg-clinical-600 hover:bg-clinical-700 text-white active:scale-[0.99] cursor-pointer"
-            : isWarmingUp
-            ? "bg-amber-50 text-amber-800 border border-amber-300 cursor-wait"
-            : isEngineOffline
-            ? "bg-slate-800 hover:bg-slate-700 text-white active:scale-[0.99] cursor-pointer shadow-sm"
-            : "bg-slate-100 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60"
+          "w-full btn-clinical",
+          hasImage && !isLoading
+            ? "bg-gradient-to-r from-[#0F74C9] via-[#0284C7] to-[#0F74C9] hover:from-[#0A5BA8] hover:to-[#0284C7] text-white shadow-[0_2px_10px_rgba(15,116,201,0.28)]"
+            : "bg-[#E6EFF5] text-[#7A91A6] border border-[#DCE8F0] cursor-not-allowed opacity-75"
         )}
-        aria-disabled={isLoading || isWarmingUp || (isEngineOffline ? isWakingUp : !hasImage)}
+        aria-disabled={isLoading || !hasImage}
       >
         {isLoading ? (
           <>
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="w-4 h-4 animate-spin text-white" />
             <span>{STRINGS.viewport.analyzingPrompt}</span>
-          </>
-        ) : isWarmingUp ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
-            <span>Inference Models Initializing (Downloading Weights)...</span>
-          </>
-        ) : isEngineOffline ? (
-          <>
-            <RotateCw className={cn("w-4 h-4 text-amber-400", isWakingUp && "animate-spin")} />
-            <span>{isWakingUp ? "Connecting to Inference Gateway..." : "Wake Up Neural Gateway (Click to Connect)"}</span>
           </>
         ) : isComplete ? (
           <>
-            <CheckCircle2 className="w-4 h-4" />
+            <CheckCircle2 className="w-4 h-4 text-white" />
             <span>{STRINGS.viewport.reRunDiagnostic}</span>
           </>
         ) : (
           <>
-            <Play className="w-4 h-4" />
-            <span>{STRINGS.viewport.runDiagnostic}</span>
+            <Play className="w-4 h-4 fill-white text-white" />
+            <span>{hasImage ? STRINGS.viewport.runDiagnostic : "Upload Scan to Run Diagnostic"}</span>
           </>
         )}
       </button>

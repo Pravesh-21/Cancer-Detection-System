@@ -1,44 +1,48 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
 
-  /* Clinical Sky / Blue Scale */
-  --color-clinical-50: #f0f9ff;
-  --color-clinical-100: #e0f2fe;
-  --color-clinical-200: #bae6fd;
-  --color-clinical-300: #7dd3fc;
-  --color-clinical-400: #38bdf8;
-  --color-clinical-500: #0ea5e9;
-  --color-clinical-600: #0284c7;
-  --color-clinical-700: #0369a1;
-  --color-clinical-800: #075985;
-  --color-clinical-900: #0c4a6e;
-
-  /* Medical Teal */
-  --color-teal-50: #f0fdfa;
-  --color-teal-100: #ccfbf1;
-  --color-teal-200: #99f6e4;
-  --color-teal-300: #5eead4;
-  --color-teal-400: #2dd4bf;
-  --color-teal-500: #14b8a6;
-  --color-teal-600: #0d9488;
-  --color-teal-700: #0f766e;
-  --color-teal-800: #115e59;
-  --color-teal-900: #134e4a;
+  /* Clinical Design Tokens */
+  --color-ink: #0B2239;
+  --color-clinical-text: #3C566E;
+  --color-clinical-muted: #7A91A6;
+  --color-primary-blue: #0F74C9;
+  --color-primary-hover: #0A5BA8;
+  --color-teal-safe: #0E9F8E;
+  --color-amber-review: #C98A0A;
+  --color-red-critical: #C8353B;
+  --color-page-bg: #F3F8FB;
+  --color-surface-white: #FFFFFF;
+  --color-viewport-bg: #07131F;
+  --color-border-subtle: #DCE8F0;
 }
 
 /* ─────────────────────────────────────────────────
-   CLINICAL DESIGN TOKENS & BASE
+   CLINICAL DESIGN TOKENS (CSS VARIABLES)
 ───────────────────────────────────────────────── */
 :root {
-  --color-background: #F8FAFC;
+  --color-ink: #0B2239;
+  --color-text: #3C566E;
+  --color-muted: #7A91A6;
+  --color-primary: #0F74C9;
+  --color-primary-hover: #0A5BA8;
+  --color-teal: #0E9F8E;
+  --color-amber: #C98A0A;
+  --color-red: #C8353B;
+  --color-page: #F3F8FB;
   --color-surface: #FFFFFF;
-  --color-border: #E2E8F0;
-  --shadow-clinical: 0 1px 3px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.04);
-  --shadow-clinical-md: 0 4px 6px -1px rgba(15,23,42,0.08), 0 2px 4px -1px rgba(15,23,42,0.04);
-  --radius: 8px;
+  --color-viewport: #07131F;
+  --color-border: #DCE8F0;
+
+  --radius-card: 16px;
+  --radius-control: 10px;
+
+  /* Layered soft shadow */
+  --shadow-layered: 0 1px 3px rgba(11, 34, 57, 0.04), 0 4px 12px rgba(11, 34, 57, 0.03);
+  --shadow-layered-hover: 0 2px 6px rgba(11, 34, 57, 0.06), 0 8px 20px rgba(11, 34, 57, 0.05);
+  --shadow-teal-glow: 0 0 0 3px rgba(14, 159, 142, 0.15), 0 8px 24px rgba(14, 159, 142, 0.12);
 }
 
 * {
@@ -52,13 +56,54 @@ html, body {
 }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
-  background-color: #F8FAFC;
-  color: #0F172A;
+  font-family: var(--font-sans);
+  background-color: var(--color-page);
+  color: var(--color-ink);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbar */
+/* ── Typographic Scale & Max Line Length ── */
+.display-28 {
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+}
+
+.title-20 {
+  font-size: 20px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+.heading-16 {
+  font-size: 16px;
+  line-height: 1.4;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+}
+
+.body-14 {
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 400;
+  max-width: 75ch;
+}
+
+.caption-12 {
+  font-size: 12px;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+}
+
+.data-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Custom Scrollbar ── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -67,21 +112,246 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #C4D7E5;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+  background: #A3BCCF;
 }
 
-/* Radiologic Custom Range Slider */
+/* ── Clinical Surface Card ── */
+.clinical-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-layered);
+  transition: box-shadow 250ms ease-out;
+}
+
+/* ── Scan Viewport Substrate ── */
+.radiograph-viewer {
+  background: var(--color-viewport);
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-border);
+}
+
+.radiograph-viewer:hover {
+  cursor: crosshair;
+}
+
+/* ── Interactive Dropzone Transitions ── */
+.dropzone-container {
+  border: 2px dashed #3C566E;
+  background: #0B1926;
+  border-radius: var(--radius-card);
+  transition: all 250ms ease-out;
+}
+
+.dropzone-container:hover {
+  border-color: #0E9F8E;
+  background: #0D2235;
+}
+
+.dropzone-container.is-dragover {
+  border-color: #0E9F8E !important;
+  background: #0D253A !important;
+  box-shadow: var(--shadow-teal-glow);
+}
+
+/* ── Scan-Line Sweep Animation (During Analysis) ── */
+@keyframes scanlineSweep {
+  0% {
+    top: -20%;
+    opacity: 0.1;
+  }
+  20% {
+    opacity: 0.9;
+  }
+  80% {
+    opacity: 0.9;
+  }
+  100% {
+    top: 110%;
+    opacity: 0.1;
+  }
+}
+
+.scanline-sweep-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: linear-gradient(
+    180deg,
+    rgba(14, 159, 142, 0) 0%,
+    rgba(14, 159, 142, 0.25) 50%,
+    rgba(14, 159, 142, 0.85) 96%,
+    #0E9F8E 100%
+  );
+  box-shadow: 0 0 20px rgba(14, 159, 142, 0.6), 0 0 40px rgba(14, 159, 142, 0.3);
+  animation: scanlineSweep 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+  z-index: 25;
+}
+
+/* ── Fade and Rise In Motion (8px) on Completion ── */
+@keyframes clinicalFadeRise {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-rise {
+  animation: clinicalFadeRise 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── Heartbeat Status Indicator Dot ── */
+@keyframes heartbeatSlow {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  14% {
+    transform: scale(1.22);
+    opacity: 1;
+  }
+  28% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  42% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+}
+
+.animate-heartbeat {
+  animation: heartbeatSlow 2.8s ease-in-out infinite;
+}
+
+/* ── Interactive Buttons (1px Lift on Hover, Press-down on Active) ── */
+.btn-clinical {
+  border-radius: var(--radius-control);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 0 16px;
+  transition: transform 150ms ease-out, background-color 150ms ease-out, border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+.btn-clinical:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn-clinical:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-clinical:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.btn-clinical-primary {
+  background-color: var(--color-primary);
+  color: #FFFFFF;
+  border: 1px solid var(--color-primary-hover);
+  box-shadow: 0 1px 3px rgba(15, 116, 201, 0.25);
+}
+
+.btn-clinical-primary:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+  box-shadow: 0 3px 8px rgba(15, 116, 201, 0.35);
+}
+
+.btn-clinical-primary:disabled {
+  background-color: #E6EFF5;
+  color: #7A91A6;
+  border-color: #DCE8F0;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  opacity: 0.75;
+}
+
+.btn-clinical-secondary {
+  background-color: #FFFFFF;
+  color: var(--color-ink);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 1px 2px rgba(11, 34, 57, 0.03);
+}
+
+.btn-clinical-secondary:hover:not(:disabled) {
+  background-color: #F8FBFC;
+  border-color: #C4D7E5;
+  color: var(--color-ink);
+}
+
+.btn-clinical-secondary:disabled {
+  background-color: #F3F8FB;
+  color: #A4B7C6;
+  border-color: #E2ECF2;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+/* ── Confidence Fill Smooth Transition ── */
+.confidence-track {
+  height: 6px;
+  background: #E5EEF4;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confidence-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 450ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Skeleton Loading ── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #EEF4F8 25%,
+    #E2ECF2 37%,
+    #EEF4F8 63%
+  );
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-control);
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ── Range Slider ── */
 .clinical-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
   height: 4px;
   border-radius: 2px;
-  background: #E2E8F0;
+  background: #DCE8F0;
   outline: none;
   cursor: pointer;
 }
@@ -92,16 +362,16 @@ body {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #0284C7;
+  background: var(--color-primary);
   cursor: pointer;
   border: 2px solid #ffffff;
-  box-shadow: 0 1px 3px rgba(2,132,199,0.3);
+  box-shadow: 0 1px 3px rgba(15, 116, 201, 0.3);
   transition: all 0.15s ease;
 }
 
 .clinical-slider::-webkit-slider-thumb:hover {
-  background: #0369A1;
-  box-shadow: 0 0 0 4px rgba(2,132,199,0.12);
+  background: var(--color-primary-hover);
+  box-shadow: 0 0 0 4px rgba(15, 116, 201, 0.12);
   transform: scale(1.1);
 }
 
@@ -109,204 +379,31 @@ body {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #0284C7;
+  background: var(--color-primary);
   cursor: pointer;
   border: 2px solid #ffffff;
-  box-shadow: 0 1px 3px rgba(2,132,199,0.3);
+  box-shadow: 0 1px 3px rgba(15, 116, 201, 0.3);
 }
 
-/* Radiograph dark viewer substrate */
-.radiograph-viewer {
-  background: #0b0f19;
-  position: relative;
-  overflow: hidden;
-}
-
-.radiograph-viewer:hover {
-  cursor: crosshair;
-}
-
-/* Loading Shimmer Skeleton */
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    #F1F5F9 25%,
-    #E2E8F0 37%,
-    #F1F5F9 63%
-  );
-  background-size: 400% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  0% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-/* Confidence Bars */
-.confidence-track {
-  height: 6px;
-  background: #E2E8F0;
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.confidence-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* Clinical Card */
-.clinical-card {
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-clinical);
-}
-
-/* Section Header */
+/* ── Section Header Badge ── */
 .section-header {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #94A3B8;
+  color: var(--color-muted);
 }
 
-/* Risk Badges (Colorblind-Safe: Color + Shape + Pattern) */
-.badge-risk-high {
-  background: #FEF2F2;
-  color: #991B1B;
-  border: 1.5px solid #E11D48;
-  font-weight: 700;
-  box-shadow: 0 1px 2px rgba(225, 29, 72, 0.1);
-}
-
-.badge-risk-moderate {
-  background: #FFFBEB;
-  color: #92400E;
-  border: 1.5px dashed #D97706;
-  font-weight: 700;
-  box-shadow: 0 1px 2px rgba(217, 119, 6, 0.1);
-}
-
-.badge-risk-low {
-  background: #ECFDF5;
-  color: #065F46;
-  border: 1.5px solid #059669;
-  font-weight: 700;
-  box-shadow: 0 1px 2px rgba(5, 150, 105, 0.1);
-}
-
-.badge-risk-normal {
-  background: #F0FDFA;
-  color: #115E59;
-  border: 1.5px solid #0D9488;
-  font-weight: 700;
-  box-shadow: 0 1px 2px rgba(13, 148, 136, 0.1);
-}
-
-/* Colorblind-Safe Severity Patterns */
-.pattern-stripe-rose {
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(225, 29, 72, 0.04),
-    rgba(225, 29, 72, 0.04) 10px,
-    transparent 10px,
-    transparent 20px
-  );
-}
-
-.pattern-dash-amber {
-  background-image: repeating-linear-gradient(
-    -45deg,
-    rgba(217, 119, 6, 0.04),
-    rgba(217, 119, 6, 0.04) 8px,
-    transparent 8px,
-    transparent 16px
-  );
-}
-
-.pattern-solid-emerald {
-  background-color: rgba(5, 150, 105, 0.03);
-}
-
-.pattern-solid-teal {
-  background-color: rgba(13, 148, 136, 0.03);
-}
-
-/* High-Contrast Interactive Controls */
-.btn-clinical-primary {
-  background-color: #0284C7;
-  color: #FFFFFF;
-  border: 1px solid #0369A1;
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(2, 132, 199, 0.25);
-  transition: all 0.15s ease-in-out;
-}
-.btn-clinical-primary:hover:not(:disabled) {
-  background-color: #0369A1;
-}
-.btn-clinical-primary:disabled {
-  background-color: #F1F5F9;
-  color: #94A3B8;
-  border-color: #CBD5E1;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.btn-clinical-secondary {
-  background-color: #FFFFFF;
-  color: #0F172A;
-  border: 1.5px solid #94A3B8;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  transition: all 0.15s ease-in-out;
-}
-.btn-clinical-secondary:hover:not(:disabled) {
-  background-color: #F8FAFC;
-  border-color: #64748B;
-}
-.btn-clinical-secondary:disabled {
-  background-color: #F8FAFC;
-  color: #CBD5E1;
-  border-color: #E2E8F0;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-/* Grad-CAM Saliency Heatmap Canvas */
-.heatmap-overlay-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  mix-blend-mode: screen;
-  opacity: 0.65;
-  transition: opacity 0.2s ease-in-out;
-}
-
-/* Monospace font metric */
-.metric-value {
-  font-family: 'JetBrains Mono', monospace;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Print Styles */
-@media print {
-  body {
-    background: white;
-    color: black;
+/* ── Respect Prefers Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+    transform: none !important;
   }
-  .no-print {
+  .scanline-sweep-overlay {
     display: none !important;
-  }
-  .clinical-card {
-    box-shadow: none;
-    border: 1px solid #000;
-    break-inside: avoid;
   }
 }

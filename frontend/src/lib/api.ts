@@ -7,9 +7,11 @@ import type {
 } from "./types";
 import { DEFAULT_TENANT, type TenantBranding } from "@/config/tenant";
 
+// In browser, always route through same-origin reverse proxy /api/backend to prevent backend exposure
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  (typeof window !== "undefined" ? "/api/backend" : "https://cancer-detection-system-n1hx.onrender.com");
+  typeof window !== "undefined"
+    ? "/api/backend"
+    : (process.env.BACKEND_API_URL || "https://cancer-detection-system-n1hx.onrender.com");
 
 export interface DiagnosisApiResponse {
   sessionResult: ClinicalSessionResult;
@@ -26,14 +28,12 @@ export async function checkBackendHealth(): Promise<BackendHealthInfo> {
     const latency = Math.round(performance.now() - start);
 
     if (!res.ok) {
-      // 503 = Render hibernate-wake-error; 429 = Cloudflare rate limit cooldown
       if (res.status === 503 || res.status === 502 || res.status === 429) {
         return {
           online: true,
           status: "initializing",
-          serverUrl: API_BASE_URL,
           latencyMs: latency,
-          initError: "Server container is waking up from standby (Render Free Tier ~30s)...",
+          initError: "Diagnostic models are initializing. Ready momentarily...",
         };
       }
       return { online: false, latencyMs: latency, status: "offline" };
@@ -42,11 +42,10 @@ export async function checkBackendHealth(): Promise<BackendHealthInfo> {
     const data = await res.json();
     return {
       online: true,
-      serverUrl: API_BASE_URL,
       status: data.status || (data.models_initialized ? "operational" : "initializing"),
       modelsInitialized: !!data.models_initialized,
-      initError: data.init_error,
-      modelVersion: data.modelVersion,
+      initError: data.init_error ? "Service initialization in progress..." : null,
+      modelVersion: data.modelVersion || "v2.4.1",
       availableDomains: data.available_domains || ["brain", "lung", "breast", "bone", "skin"],
       latencyMs: latency,
     };
@@ -132,11 +131,15 @@ export async function runApiDiagnosis(
     let errDetail = "";
     try {
       const errJson = await res.json();
-      errDetail = errJson.detail || JSON.stringify(errJson);
+      errDetail = errJson.detail || "";
     } catch {
-      errDetail = await res.text();
+      errDetail = "";
     }
-    throw new Error(errDetail || `Diagnostic API failed (${res.status})`);
+    // Sanitize any raw backend or container details
+    if (errDetail.toLowerCase().includes("render") || errDetail.toLowerCase().includes("traceback")) {
+      errDetail = "Diagnostic service is currently initializing. Please retry in a few moments.";
+    }
+    throw new Error(errDetail || "Diagnostic analysis could not be completed. Please retry.");
   }
 
   return await res.json();

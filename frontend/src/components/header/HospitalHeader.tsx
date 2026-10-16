@@ -1,16 +1,14 @@
 "use client";
 
 import React from "react";
-import { Database, Upload, ShieldCheck, Activity, Wifi, WifiOff, Loader2, AlertTriangle } from "lucide-react";
 import type { TenantBranding } from "@/config/tenant";
-import { STRINGS } from "@/config/strings";
 import type { BackendHealthInfo } from "@/lib/types";
 
 interface HospitalHeaderProps {
-  tenant: TenantBranding;
-  healthInfo: BackendHealthInfo;
-  onTriggerUpload: () => void;
-  onAuditLogs: () => void;
+  tenant?: TenantBranding;
+  healthInfo?: BackendHealthInfo;
+  onTriggerUpload?: () => void;
+  onAuditLogs?: () => void;
   unreadAuditCount?: number;
   customLogo?: React.ReactNode;
   onRefreshHealth?: () => void;
@@ -20,149 +18,69 @@ interface HospitalHeaderProps {
 export default function HospitalHeader({
   tenant,
   healthInfo,
-  onTriggerUpload,
-  onAuditLogs,
-  unreadAuditCount = 0,
-  customLogo,
-  onRefreshHealth,
-  isRefreshingHealth = false,
 }: HospitalHeaderProps) {
-  const isOnline = healthInfo.online;
-  const isOperational = isOnline && (healthInfo.status === "operational" || healthInfo.modelsInitialized === true);
-  const isError = isOnline && healthInfo.status === "error";
-  const isInitializing = isOnline && !isOperational && !isError;
+  const isOnline = healthInfo ? healthInfo.online : true;
+  const modelVer = tenant?.modelVersion || "v2.4.1";
 
   return (
-    <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs" role="banner">
-      <div className="max-w-[1720px] mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-4">
-        {/* Swappable Hospital / Lab Branding Slot */}
-        <div className="flex items-center gap-3 min-w-0">
-          {customLogo ? (
-            customLogo
-          ) : (
-            <div
-              className="w-9 h-9 rounded-lg bg-clinical-600 flex items-center justify-center text-white shadow-xs flex-shrink-0"
-              aria-hidden="true"
+    <header
+      className="bg-[#FFFFFF] border-b border-[#DCE8F0] sticky top-0 z-30 shadow-[0_2px_8px_rgba(11,34,57,0.05)]"
+      role="banner"
+    >
+      <div className="max-w-[1780px] mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-4">
+        {/* CancerLens Branding: Dark and Light Accent Combination */}
+        <div className="flex items-center gap-3.5 min-w-0">
+          <div
+            className="w-10 h-10 rounded-[10px] bg-gradient-to-br from-[#0B2239] to-[#07131F] border border-[#0E9F8E]/40 flex items-center justify-center text-[#0E9F8E] shadow-[0_0_12px_rgba(14,159,142,0.22)] flex-shrink-0"
+            aria-hidden="true"
+          >
+            {/* Precision Optical Diagnostic Reticle with Teal Glow */}
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              className="w-5 h-5 text-[#0E9F8E]"
+              stroke="currentColor"
+              strokeWidth={2.2}
             >
-              <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" stroke="currentColor" strokeWidth={2.4}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m-8-8h16" />
-              </svg>
-            </div>
-          )}
+              <circle cx="12" cy="12" r="7" strokeDasharray="3 3" />
+              <circle cx="12" cy="12" r="3" fill="#0E9F8E" fillOpacity={0.3} />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 2v3m0 14v3M2 12h3m14 0h3" />
+            </svg>
+          </div>
+
           <div className="min-w-0">
-            <h1 className="text-[15px] font-bold text-slate-900 leading-tight truncate">
-              {tenant.hospitalName}
-            </h1>
-            <p className="text-[11px] text-slate-500 truncate">
-              {tenant.departmentName}
+            <div className="flex items-center gap-2">
+              <h1 className="text-[18px] font-extrabold text-[#0B2239] leading-tight tracking-tight">
+                Cancer<span className="text-[#0F74C9]">Lens</span>
+              </h1>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-[6px] bg-[#0B2239] text-[#38BDF8] border border-[#16385C] font-mono shadow-2xs">
+                {modelVer}
+              </span>
+              <span className="hidden sm:inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-[6px] bg-[#F0FAF9] text-[#0E9F8E] border border-[#BCE8E3]">
+                AI WORKSTATION
+              </span>
+            </div>
+            <p className="text-[12px] text-[#7A91A6] truncate font-medium leading-tight">
+              Clinical Radiologic Oncology Decision Support
             </p>
           </div>
         </div>
 
-        {/* Live Clinical Telemetry & PHI De-identification Indicators */}
-        <div className="hidden lg:flex items-center gap-2.5 text-[11px]">
-          {/* PHI Anonymization Compliance Badge */}
-          <div
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200 font-medium"
-            title={tenant.anonymizationProtocol}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-teal-600" />
-            <span>{STRINGS.header.phiDeidentifiedBadge}</span>
-          </div>
-
-          {/* Dynamic Backend Engine Health & Ping */}
-          {isOperational ? (
-            <div
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-emerald-50 text-emerald-800 border-emerald-200 cursor-pointer hover:bg-emerald-100/70 transition-colors"
-              onClick={onRefreshHealth}
-              title="Gateway is operational and ready for scans. Click to refresh telemetry."
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <Wifi className="w-3.5 h-3.5 text-emerald-600" />
-              <span>
-                {STRINGS.header.telemetryServerLabel}: Operational
-                {healthInfo.latencyMs !== undefined && ` (${healthInfo.latencyMs}ms)`}
-              </span>
-            </div>
-          ) : isInitializing ? (
-            <div
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-amber-50 text-amber-800 border-amber-200 cursor-pointer hover:bg-amber-100/70 transition-colors"
-              onClick={onRefreshHealth}
-              title="Backend server is warming up from hibernation. Click to refresh status."
-            >
-              <Loader2 className="w-3.5 h-3.5 text-amber-600 animate-spin" />
-              <span>
-                {STRINGS.header.telemetryServerLabel}: Waking Up...
-                {healthInfo.latencyMs !== undefined && ` (${healthInfo.latencyMs}ms)`}
-              </span>
-            </div>
-          ) : isError ? (
-            <div
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-rose-50 text-rose-800 border-rose-200 cursor-pointer hover:bg-rose-100 transition-colors"
-              onClick={onRefreshHealth}
-              title={healthInfo.initError || "Click to retry connection"}
-            >
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-              <span>
-                {STRINGS.header.telemetryServerLabel}: Error (Retry)
-              </span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={onRefreshHealth}
-              disabled={isRefreshingHealth}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border font-medium bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100/80 transition-all cursor-pointer"
-              title="Inference Gateway in standby (Render spins down after 15m idle). Click to wake server."
-            >
-              {isRefreshingHealth ? (
-                <Loader2 className="w-3.5 h-3.5 text-rose-600 animate-spin" />
-              ) : (
-                <WifiOff className="w-3.5 h-3.5 text-rose-600" />
-              )}
-              <span>
-                {isRefreshingHealth ? "Connecting..." : `${STRINGS.header.telemetryServerLabel}: Standby (Click to Wake)`}
-              </span>
-            </button>
-          )}
-
-          {/* PACS Routing Gateway Node */}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200 font-medium">
-            <Database className="w-3.5 h-3.5 text-slate-400" />
-            <span>
-              {STRINGS.header.pacsGatewayLabel}: {tenant.dicomAeTitle}
+        {/* Right Side Status Badges: Dark and Light contrast */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-[10px] bg-[#F3F8FB] border border-[#DCE8F0] shadow-2xs">
+            <span
+              className="w-2.5 h-2.5 rounded-full bg-[#0E9F8E] animate-heartbeat flex-shrink-0 shadow-[0_0_8px_rgba(14,159,142,0.6)]"
+              aria-hidden="true"
+            />
+            <span className="text-[12px] font-bold text-[#0B2239]">
+              {isOnline ? "Workstation Active" : "Offline Cache Mode"}
+            </span>
+            <span className="text-[#DCE8F0]">|</span>
+            <span className="text-[11px] font-semibold text-[#0F74C9] bg-[#EBF4FC] px-2 py-0.5 rounded-[5px]">
+              Decision Support Only
             </span>
           </div>
-        </div>
-
-        {/* Primary Action Buttons (Promoted Audit Logs) */}
-        <div className="flex items-center gap-2.5 flex-shrink-0">
-          {/* Primary Audit Logs Navigation Button */}
-          <button
-            type="button"
-            onClick={onAuditLogs}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 transition-colors shadow-2xs relative"
-            aria-label="Open Regulatory Audit Logs"
-          >
-            <Activity className="w-3.5 h-3.5 text-slate-500" />
-            <span>{STRINGS.header.auditLogsButton}</span>
-            {unreadAuditCount > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 text-[9px] font-bold bg-clinical-600 text-white rounded-full">
-                {unreadAuditCount}
-              </span>
-            )}
-          </button>
-
-          {/* Upload Scan Button */}
-          <button
-            type="button"
-            onClick={onTriggerUpload}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-[12px] font-bold bg-clinical-600 hover:bg-clinical-700 text-white shadow-xs transition-all active:scale-[0.98]"
-            aria-label="Upload New Patient Scan"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span>{STRINGS.header.uploadScanButton}</span>
-          </button>
         </div>
       </div>
     </header>
