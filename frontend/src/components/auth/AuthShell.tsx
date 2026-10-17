@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { ShieldCheck, Building2, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,8 +18,26 @@ export default function AuthShell({ title, subtitle, children, footer, wide }: A
   return (
     <div className="min-h-screen grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] bg-[#F3F8FB]">
       {/* Brand panel */}
-      <aside className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-[#0B2239] via-[#0E2A47] to-[#07131F] text-white p-10 xl:p-14">
-        <div className="flex items-center gap-3">
+      {/* Sticky + viewport height so long forms (register) scroll past it instead of stretching the photo */}
+      <aside className="hidden lg:flex lg:sticky lg:top-0 lg:h-screen self-start relative overflow-hidden flex-col justify-between bg-[#0B2239] text-white p-10 xl:p-14">
+        {/* Radiologist reviewing an MRI study — monitor in focus, clinician softly blurred */}
+        <Image
+          src="/images/auth-radiology.webp"
+          alt="Radiologist reviewing an MRI spine study on a diagnostic workstation"
+          fill
+          priority
+          // Landscape photo in a tall panel: object-cover renders it ~1.5× the viewport height wide
+          sizes="(min-width: 1024px) 150vh, 1px"
+          quality={85}
+          className="object-cover object-[50%_center]"
+        />
+        {/* Legibility: light veil behind the logo, image stays clear mid-panel, deep navy under the copy */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(11,34,57,0.78)_0%,rgba(11,34,57,0.12)_26%,rgba(11,34,57,0.35)_44%,rgba(11,34,57,0.88)_62%,rgba(7,19,31,0.97)_100%)]"
+        />
+
+        <div className="relative z-10 flex items-center gap-3">
           <div className="w-10 h-10 rounded-[10px] bg-[#07131F] border border-[#0E9F8E]/40 flex items-center justify-center shadow-[0_0_12px_rgba(14,159,142,0.3)]">
             <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-[#0E9F8E]" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
               <circle cx="12" cy="12" r="7" strokeDasharray="3 3" />
@@ -31,8 +50,9 @@ export default function AuthShell({ title, subtitle, children, footer, wide }: A
           </span>
         </div>
 
+        <div className="relative z-10 space-y-8">
         <div className="space-y-6 max-w-md">
-          <h2 className="text-[28px] xl:text-[32px] font-extrabold leading-tight">
+          <h2 className="text-[28px] xl:text-[32px] font-extrabold leading-tight [text-shadow:0_2px_12px_rgba(0,0,0,0.35)]">
             AI-assisted oncology diagnostics for your hospital.
           </h2>
           <ul className="space-y-4 text-[14px] text-[#B8CCE0]">
@@ -51,9 +71,11 @@ export default function AuthShell({ title, subtitle, children, footer, wide }: A
           </ul>
         </div>
 
-        <p className="text-[11px] text-[#7A91A6]">
-          Investigational software. Not a standalone diagnostic device.
+        <p className="text-[11px] text-[#7A91A6] flex flex-wrap gap-x-3">
+          <span>Investigational software. Not a standalone diagnostic device.</span>
+          <span>Photo: MART PRODUCTION / Pexels</span>
         </p>
+        </div>
       </aside>
 
       {/* Form panel */}

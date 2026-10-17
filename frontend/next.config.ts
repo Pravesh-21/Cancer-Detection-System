@@ -6,6 +6,10 @@ const RENDER_BACKEND_URL =
   "https://cancer-detection-system-n1hx.onrender.com";
 
 const nextConfig: NextConfig = {
+  images: {
+    // Next 16 requires an allowlist; 85 is used for the login/register hero photo
+    qualities: [75, 85],
+  },
   /* Dynamic proxying to active backend (port 8000/8001/cloud) handled in src/app/api/backend/[...path]/route.ts */
 };
 
