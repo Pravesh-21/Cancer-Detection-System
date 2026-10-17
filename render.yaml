@@ -50,7 +50,11 @@ services:
         value: "cancerlens"
       - key: PATIENT_DATA_KEY      # generate: python manage_patients.py genkey — back it up!
         sync: false
-      - key: PATIENT_API_KEY       # same value must be set on Vercel (server-side only)
+      - key: PATIENT_API_KEY       # same value must be set on Vercel (server-side only) — login fails without it
+        sync: false
+      - key: SESSION_TTL_HOURS     # how long a hospital login lasts
+        value: "12"
+      - key: HOSPITAL_REGISTRATION_CODE   # optional: when set, new hospitals need this code to register
         sync: false
 
       # Patient report e-mails (Brevo) — sender must be verified in Brevo

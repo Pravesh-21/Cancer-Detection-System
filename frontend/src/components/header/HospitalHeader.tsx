@@ -3,6 +3,8 @@
 import React from "react";
 import type { TenantBranding } from "@/config/tenant";
 import type { BackendHealthInfo } from "@/lib/types";
+import type { HospitalSession } from "@/lib/api";
+import { Building2, LogOut } from "lucide-react";
 
 interface HospitalHeaderProps {
   tenant?: TenantBranding;
@@ -13,11 +15,15 @@ interface HospitalHeaderProps {
   customLogo?: React.ReactNode;
   onRefreshHealth?: () => void;
   isRefreshingHealth?: boolean;
+  account?: HospitalSession | null;
+  onLogout?: () => void;
 }
 
 export default function HospitalHeader({
   tenant,
   healthInfo,
+  account,
+  onLogout,
 }: HospitalHeaderProps) {
   const isOnline = healthInfo ? healthInfo.online : true;
   const modelVer = tenant?.modelVersion || "v2.4.1";
@@ -68,7 +74,7 @@ export default function HospitalHeader({
 
         {/* Right Side Status Badges: Dark and Light contrast */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-[10px] bg-[#F3F8FB] border border-[#DCE8F0] shadow-2xs">
+          <div className="hidden lg:flex items-center gap-2.5 px-3 py-1.5 rounded-[10px] bg-[#F3F8FB] border border-[#DCE8F0] shadow-2xs">
             <span
               className="w-2.5 h-2.5 rounded-full bg-[#0E9F8E] animate-heartbeat flex-shrink-0 shadow-[0_0_8px_rgba(14,159,142,0.6)]"
               aria-hidden="true"
@@ -81,6 +87,32 @@ export default function HospitalHeader({
               Decision Support Only
             </span>
           </div>
+
+          {account && (
+            <div className="flex items-center gap-2.5 pl-3 border-l border-[#DCE8F0]">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#0B2239] to-[#16385C] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0" aria-hidden="true">
+                {account.user.name.replace(/^dr\.?\s*/i, "").charAt(0).toUpperCase()}
+              </div>
+              <div className="hidden sm:block min-w-0 max-w-[220px]">
+                <p className="text-[12px] font-bold text-[#0B2239] truncate leading-tight">{account.user.name}</p>
+                <p className="text-[11px] text-[#7A91A6] truncate leading-tight flex items-center gap-1">
+                  <Building2 className="w-3 h-3 flex-shrink-0" />
+                  {account.hospital.name}
+                </p>
+              </div>
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  title="Sign out"
+                  aria-label="Sign out"
+                  className="p-2 rounded-[8px] border border-[#DCE8F0] text-[#3C566E] hover:text-[#C8353B] hover:border-[#FECACA] hover:bg-[#FEF2F2] transition-colors cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </header>

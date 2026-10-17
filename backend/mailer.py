@@ -29,7 +29,8 @@ def mailer_status() -> str:
     return "configured"
 
 
-def send_email(to_email: str, to_name: str, subject: str, html_body: str, text_body: str) -> str:
+def send_email(to_email: str, to_name: str, subject: str, html_body: str, text_body: str,
+               sender_name: Optional[str] = None) -> str:
     """Send one transactional e-mail. Returns Brevo's messageId."""
     api_key = os.environ.get("BREVO_API_KEY", "").strip()
     sender = os.environ.get("BREVO_SENDER_EMAIL", "").strip()
@@ -39,7 +40,7 @@ def send_email(to_email: str, to_name: str, subject: str, html_body: str, text_b
         raise MailerError("E-mail is not configured (BREVO_SENDER_EMAIL missing)")
 
     payload = {
-        "sender": {"email": sender, "name": os.environ.get("BREVO_SENDER_NAME", "CancerLens")},
+        "sender": {"email": sender, "name": sender_name or os.environ.get("BREVO_SENDER_NAME", "CancerLens")},
         "to": [{"email": to_email, "name": to_name}],
         "subject": subject,
         "htmlContent": html_body,

@@ -2,11 +2,12 @@
 drive_store.py — Patient scan images in Google Drive, one sub-folder per patient.
 
   <PATIENT_IMAGES_FOLDER_ID>/
-    PT-7F3K9Q - Priya Sharma/
-      VS-261016-AB12CD_brain_20261016-091530.jpg
-      VS-261103-XY98ZT_brain_20261103-142201.jpg
-    PT-K2M8QW - Arjun Mehta/
-      ...
+    HSP-4K7Q2M - City Hospital/            ← one folder per hospital
+      PT-7F3K9Q - Priya Sharma/            ← one folder per patient
+        VS-261016-AB12CD_brain_20261016-091530.jpg
+        VS-261103-XY98ZT_brain_20261103-142201.jpg
+      PT-K2M8QW - Arjun Mehta/
+        ...
 
 Uploads use the Drive REST API with an OAuth refresh token for the account
 that owns the folder (service accounts have no storage quota on personal
@@ -95,11 +96,8 @@ def _safe_name(name: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[\\/:*?\"<>|]+", " ", name)).strip()[:120]
 
 
-def ensure_patient_folder(patient_code: str, patient_name: str, known_folder_id: Optional[str] = None) -> str:
-    """Return the patient's Drive folder ID, creating "<PT-code> - <name>" under the parent if needed."""
-    parent = _folder_id_from_env()
-    if not parent:
-        raise DriveError("PATIENT_IMAGES_FOLDER_ID not configured")
+def _ensure_folder(parent: str, code: str, display_name: str, known_folder_id: Optional[str]) -> str:
+    """Return the ID of "<code> - <display_name>" under parent, creating it if needed."""
     if known_folder_id:
         try:
             meta = _call(f"{API}/{known_folder_id}?fields=id,trashed")
@@ -108,16 +106,28 @@ def ensure_patient_folder(patient_code: str, patient_name: str, known_folder_id:
         except DriveError:
             pass  # deleted or inaccessible — fall through and find/recreate
 
-    # Match on the patient code prefix so a name change never creates a duplicate folder
+    # Match on the code prefix so a renamed patient/hospital never gets a duplicate folder
     q = (f"'{parent}' in parents and mimeType='{FOLDER_MIME}' and trashed=false "
-         f"and name contains '{patient_code}'")
+         f"and name contains '{code}'")
     found = _call(f"{API}?{urllib.parse.urlencode({'q': q, 'fields': 'files(id,name)', 'pageSize': 10})}")
     for f in found.get("files", []):
-        if f["name"].startswith(patient_code):
+        if f["name"].startswith(code):
             return f["id"]
 
-    meta = {"name": _safe_name(f"{patient_code} - {patient_name}"), "mimeType": FOLDER_MIME, "parents": [parent]}
+    meta = {"name": _safe_name(f"{code} - {display_name}"), "mimeType": FOLDER_MIME, "parents": [parent]}
     return _call(f"{API}?fields=id", "POST", json.dumps(meta).encode())["id"]
+
+
+def ensure_hospital_folder(hospital_code: str, hospital_name: str, known_folder_id: Optional[str] = None) -> str:
+    root = _folder_id_from_env()
+    if not root:
+        raise DriveError("PATIENT_IMAGES_FOLDER_ID not configured")
+    return _ensure_folder(root, hospital_code, hospital_name, known_folder_id)
+
+
+def ensure_patient_folder(hospital_folder_id: str, patient_code: str, patient_name: str,
+                          known_folder_id: Optional[str] = None) -> str:
+    return _ensure_folder(hospital_folder_id, patient_code, patient_name, known_folder_id)
 
 
 def upload_image(folder_id: str, file_name: str, data: bytes, mime_type: str) -> Dict[str, str]:

@@ -30,9 +30,12 @@ from schemas import (
     PatientIntakeRequest,
     PatientLookupRequest,
     VisitSignOffRequest,
+    HospitalRegisterRequest,
+    LoginRequest,
 )
 from model_loader import ModelEngine
 from download_models import download_models
+import auth
 import drive_store
 import mailer
 import patient_store
@@ -57,24 +60,27 @@ TENANT_CONFIG = {
     "anonymizationProtocol": "HIPAA Safe Harbor De-identification (45 CFR § 164.514(b)(2))",
 }
 
-audit_logs: List[AuditLogEntry] = [
-    AuditLogEntry(
+# In-memory audit trail: (hospital_id or None for system-wide events, entry), newest first
+audit_logs: List[tuple] = [
+    (None, AuditLogEntry(
         id=f"EVT-{uuid.uuid4().hex[:6].upper()}",
         timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         actor="SYS_INFERENCE_ENGINE",
         action="SUBSYSTEM_INITIALIZED",
         details="Dual-stage hierarchical neural pipeline online and ready for ingestion.",
         status="SUCCESS",
-    ),
-    AuditLogEntry(
+    )),
+]
+AUDIT_LOG_LIMIT = 2000
+
+
+def _audit(hospital_id, actor: str, action: str, details: str, status: str = "SUCCESS") -> None:
+    audit_logs.insert(0, (str(hospital_id) if hospital_id else None, AuditLogEntry(
         id=f"EVT-{uuid.uuid4().hex[:6].upper()}",
         timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-        actor="PACS_GATEWAY_NODE",
-        action="SECURE_CHANNEL_READY",
-        details=f"Mutual TLS 1.3 session established for AE: {TENANT_CONFIG['dicomAeTitle']}.",
-        status="SUCCESS",
-    ),
-]
+        actor=actor, action=action, details=details, status=status,
+    )))
+    del audit_logs[AUDIT_LOG_LIMIT:]
 
 
 _init_error: Optional[str] = None
@@ -135,6 +141,79 @@ app.add_middleware(
 )
 
 
+# ── Authentication ───────────────────────────────────────────────────────────
+
+def require_registry_key(x_api_key: Optional[str] = Header(None)):
+    """If PATIENT_API_KEY is set, private endpoints require it (injected server-side by the Next.js proxy)."""
+    expected = os.environ.get("PATIENT_API_KEY", "")
+    if expected and not hmac.compare_digest(x_api_key or "", expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _auth_store() -> auth.AuthStore:
+    store = auth.get_auth()
+    if store is None:
+        raise HTTPException(status_code=503, detail="Account service is unavailable (database not connected). Please retry shortly.")
+    return store
+
+
+def _bearer(authorization: Optional[str]) -> str:
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return ""
+
+
+def current_user(authorization: Optional[str] = Header(None), _key: None = Depends(require_registry_key)) -> dict:
+    """Logged-in hospital staff member; every clinical endpoint depends on this."""
+    session = _auth_store().resolve_session(_bearer(authorization))
+    if not session:
+        raise HTTPException(status_code=401, detail="Your session has expired. Please sign in again.")
+    return session
+
+
+def _me_payload(u: dict) -> dict:
+    return {
+        "user": {"name": u["user_name"], "email": u["email"], "role": u["role"]},
+        "hospital": {"code": u["hospital_code"], "name": u["hospital_name"], "city": u.get("hospital_city")},
+    }
+
+
+@app.post("/api/auth/register", dependencies=[Depends(require_registry_key)])
+def auth_register(req: HospitalRegisterRequest):
+    try:
+        session = _auth_store().register_hospital(req.model_dump())
+    except auth.AuthError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    me = _auth_store().resolve_session(session["token"])
+    _audit(me["hospital_id"], "ACCOUNT_SERVICE", "HOSPITAL_REGISTERED",
+           f"{me['hospital_code']} registered by {me['user_name']}.")
+    return {**session, **_me_payload(me)}
+
+
+@app.post("/api/auth/login", dependencies=[Depends(require_registry_key)])
+def auth_login(req: LoginRequest):
+    try:
+        session = _auth_store().login(req.email, req.password)
+    except auth.AuthError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    me = _auth_store().resolve_session(session["token"])
+    _audit(me["hospital_id"], me["user_name"], "USER_SIGNED_IN", f"{me['email']} signed in.", "INFO")
+    return {**session, **_me_payload(me)}
+
+
+@app.post("/api/auth/logout", dependencies=[Depends(require_registry_key)])
+def auth_logout(authorization: Optional[str] = Header(None)):
+    store = auth.get_auth()
+    if store:
+        store.revoke_session(_bearer(authorization))
+    return {"signedOut": True}
+
+
+@app.get("/api/auth/me")
+def auth_me(user: dict = Depends(current_user)):
+    return _me_payload(user)
+
+
 @app.get("/health")
 def health_check():
     status = "operational" if _models_ready else ("error" if _init_error else "initializing")
@@ -163,13 +242,15 @@ def get_tenant_config():
 
 
 @app.get("/api/audit-logs", response_model=List[AuditLogEntry])
-def get_audit_logs():
-    return audit_logs
+def get_audit_logs(user: dict = Depends(current_user)):
+    hid = str(user["hospital_id"])
+    return [e for owner, e in audit_logs if owner in (None, hid)]
 
 
 @app.post("/api/audit-logs", response_model=AuditLogEntry)
-def record_audit_log(entry: AuditLogEntry):
-    audit_logs.insert(0, entry)
+def record_audit_log(entry: AuditLogEntry, user: dict = Depends(current_user)):
+    audit_logs.insert(0, (str(user["hospital_id"]), entry))
+    del audit_logs[AUDIT_LOG_LIMIT:]
     return entry
 
 
@@ -179,6 +260,7 @@ async def diagnose_image(
     file: UploadFile = File(...),
     domain_override: Optional[str] = Form(None),
     visit_code: Optional[str] = Form(None),
+    user: dict = Depends(current_user),
 ):
     if not _models_ready:
         if _init_error:
@@ -251,7 +333,7 @@ async def diagnose_image(
         modality=modality_map.get(target_domain, "DX"),
         bodyPartExamined=body_part_map.get(target_domain, "GENERAL EXAMINATION"),
         sliceThickness="3.0 mm" if target_domain in ["brain", "lung"] else None,
-        institution=TENANT_CONFIG["hospitalName"],
+        institution=user["hospital_name"],
         referringPhysician="Clinical Attending Radiologist, MD",
         imagingDevice="Clinical PACS Radiography Node",
     )
@@ -279,17 +361,8 @@ async def diagnose_image(
         timestamp=timestamp_iso,
     )
 
-    audit_logs.insert(
-        0,
-        AuditLogEntry(
-            id=f"EVT-{uuid.uuid4().hex[:6].upper()}",
-            timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            actor="SYSTEM_PIPELINE",
-            action="STUDY_DIAGNOSTIC_EVAL",
-            details=f"Inference completed for {file.filename} -> {target_domain.upper()} ({display_name} @ {child_conf*100:.1f}%)",
-            status="SUCCESS",
-        ),
-    )
+    _audit(user["hospital_id"], "SYSTEM_PIPELINE", "STUDY_DIAGNOSTIC_EVAL",
+           f"Inference completed -> {target_domain.upper()} ({display_name} @ {child_conf*100:.1f}%)")
 
     if visit_code:
         # Best-effort: a registry outage must never block the clinical result
@@ -317,12 +390,13 @@ async def diagnose_image(
                     "size_bytes": len(contents),
                     "content_type": file.content_type,
                 },
+                hospital_id=user["hospital_id"],
             )
         except Exception as e:
             print(f"[patient_store] Could not record diagnosis for visit: {type(e).__name__}")
 
         if drive_store.drive_status() == "configured":
-            background.add_task(_archive_scan_to_drive, visit_code, contents, file.filename, file.content_type, target_domain)
+            background.add_task(_archive_scan_to_drive, user, visit_code, contents, file.filename, file.content_type, target_domain)
 
     return DiagnosisResponse(
         sessionResult=session_result,
@@ -330,36 +404,34 @@ async def diagnose_image(
     )
 
 
-def _archive_scan_to_drive(visit_code: str, data: bytes, file_name: str, content_type: Optional[str], domain: str):
-    """Runs after the response is sent: file the scan in the patient's Drive folder."""
+def _archive_scan_to_drive(user: dict, visit_code: str, data: bytes, file_name: str, content_type: Optional[str], domain: str):
+    """Runs after the response is sent: file the scan in <hospital>/<patient>/ in Drive."""
     try:
         store = patient_store.get_store()
-        ctx = store.drive_context(visit_code)
+        hid = user["hospital_id"]
+        ctx = store.drive_context(visit_code, hid)
         if not ctx:
             return
         sha = hashlib.sha256(data).hexdigest()
         if (ctx["scan_drive"] or {}).get("sha256") == sha:
             return  # same image re-run (e.g. domain override) — already archived
-        folder_id = drive_store.ensure_patient_folder(ctx["patient_code"], ctx["patient_name"], ctx["drive_folder_id"])
+        hospital_doc = _auth_store().hospitals.find_one({"_id": hid}, {"drive_folder_id": 1}) or {}
+        hospital_folder = drive_store.ensure_hospital_folder(user["hospital_code"], user["hospital_name"], hospital_doc.get("drive_folder_id"))
+        if hospital_folder != hospital_doc.get("drive_folder_id"):
+            _auth_store().set_hospital_drive_folder(hid, hospital_folder)
+        folder_id = drive_store.ensure_patient_folder(hospital_folder, ctx["patient_code"], ctx["patient_name"], ctx["drive_folder_id"])
         if folder_id != ctx["drive_folder_id"]:
             store.set_patient_drive_folder(ctx["patient_code"], folder_id)
         ext = os.path.splitext(file_name or "")[1].lower() or ".jpg"
         name = f"{visit_code}_{domain}_{datetime.utcnow():%Y%m%d-%H%M%S}{ext}"
         info = drive_store.upload_image(folder_id, name, data, content_type or "application/octet-stream")
-        store.set_visit_scan_drive(visit_code, {**info, "file_name": name, "sha256": sha, "uploaded_at": datetime.utcnow()})
+        store.set_visit_scan_drive(visit_code, {**info, "file_name": name, "sha256": sha, "uploaded_at": datetime.utcnow()}, hid)
         print(f"[drive] Archived scan for {ctx['patient_code']} / {visit_code}")
     except Exception as e:
         print(f"[drive] Scan archive failed for {visit_code}: {type(e).__name__}: {e}")
 
 
 # ── Patient Registry ─────────────────────────────────────────────────────────
-
-def require_registry_key(x_api_key: Optional[str] = Header(None)):
-    """If PATIENT_API_KEY is set, patient endpoints require it (injected server-side by the Next.js proxy)."""
-    expected = os.environ.get("PATIENT_API_KEY", "")
-    if expected and not hmac.compare_digest(x_api_key or "", expected):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
 
 def _registry():
     try:
@@ -368,41 +440,38 @@ def _registry():
         raise HTTPException(status_code=503, detail="Patient registry is unavailable. Diagnosis still works; records will not be saved.")
 
 
-@app.post("/api/patients/intake", dependencies=[Depends(require_registry_key)])
-def patient_intake(req: PatientIntakeRequest):
-    result = _registry().register_visit(req.model_dump())
-    audit_logs.insert(0, AuditLogEntry(
-        id=f"EVT-{uuid.uuid4().hex[:6].upper()}",
-        timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-        actor="PATIENT_REGISTRY",
-        action="RETURNING_PATIENT_VISIT" if result["isReturning"] else "NEW_PATIENT_REGISTERED",
-        details=f"{result['patientCode']} opened visit {result['visitCode']} (visit #{result['visitNumber']}).",
-        status="SUCCESS",
-    ))
+@app.post("/api/patients/intake")
+def patient_intake(req: PatientIntakeRequest, user: dict = Depends(current_user)):
+    result = _registry().register_visit(req.model_dump(), user["hospital_id"])
+    _audit(user["hospital_id"], user["user_name"],
+           "RETURNING_PATIENT_VISIT" if result["isReturning"] else "NEW_PATIENT_REGISTERED",
+           f"{result['patientCode']} opened visit {result['visitCode']} (visit #{result['visitNumber']}).")
     return result
 
 
 # POST (not GET) so the MRN never appears in URLs or access logs
-@app.post("/api/patients/lookup", dependencies=[Depends(require_registry_key)])
-def patient_lookup(req: PatientLookupRequest):
-    found = _registry().lookup_by_mrn(req.mrn)
+@app.post("/api/patients/lookup")
+def patient_lookup(req: PatientLookupRequest, user: dict = Depends(current_user)):
+    found = _registry().lookup_by_mrn(req.mrn, user["hospital_id"])
     if not found:
         raise HTTPException(status_code=404, detail="No patient on record with this MRN")
     return found
 
 
-@app.post("/api/visits/{visit_code}/signoff", dependencies=[Depends(require_registry_key)])
-def visit_signoff(visit_code: str, req: VisitSignOffRequest):
-    if not _registry().sign_off(visit_code, req.notes, req.signedBy):
+@app.post("/api/visits/{visit_code}/signoff")
+def visit_signoff(visit_code: str, req: VisitSignOffRequest, user: dict = Depends(current_user)):
+    # The signer is always the logged-in user — never taken from the request body
+    if not _registry().sign_off(visit_code, req.notes, user["user_name"], user["hospital_id"]):
         raise HTTPException(status_code=404, detail="Visit not found")
-    return {"visitCode": visit_code, "status": "signed_off"}
+    _audit(user["hospital_id"], user["user_name"], "DOCTOR_SIGNOFF", f"Visit {visit_code} signed off.")
+    return {"visitCode": visit_code, "status": "signed_off", "signedBy": user["user_name"]}
 
 
-@app.post("/api/visits/{visit_code}/send-report", dependencies=[Depends(require_registry_key)])
-def visit_send_report(visit_code: str):
+@app.post("/api/visits/{visit_code}/send-report")
+def visit_send_report(visit_code: str, user: dict = Depends(current_user)):
     """E-mail the signed-off report to the patient's address on record (never taken from the client)."""
     store = _registry()
-    ctx = store.report_context(visit_code)
+    ctx = store.report_context(visit_code, user["hospital_id"])
     if not ctx:
         raise HTTPException(status_code=404, detail="Visit not found")
     if ctx["visit"].get("status") != "signed_off":
@@ -412,35 +481,29 @@ def visit_send_report(visit_code: str):
 
     mail = mailer.build_report_email(
         patient_name=ctx["patient_name"] or "Patient",
-        hospital=os.environ.get("BREVO_SENDER_NAME") or "CancerLens",
+        hospital=user["hospital_name"],
         support_contact=os.environ.get("BREVO_SENDER_EMAIL") or TENANT_CONFIG["supportContact"],
         visit=ctx["visit"],
         doctor_notes=ctx["doctor_notes"],
         signed_by=ctx["signed_by"],
     )
     try:
-        message_id = mailer.send_email(ctx["email"], ctx["patient_name"] or "Patient", mail["subject"], mail["html"], mail["text"])
+        message_id = mailer.send_email(ctx["email"], ctx["patient_name"] or "Patient", mail["subject"], mail["html"], mail["text"],
+                                       sender_name=user["hospital_name"])
     except mailer.MailerError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    store.log_report_email(visit_code, message_id)
-    patient_code = ctx["visit"].get("patient_code")
-    audit_logs.insert(0, AuditLogEntry(
-        id=f"EVT-{uuid.uuid4().hex[:6].upper()}",
-        timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-        actor="PATIENT_REGISTRY",
-        action="REPORT_EMAILED",
-        details=f"Report for visit {visit_code} e-mailed to {patient_code}'s address on record.",
-        status="SUCCESS",
-    ))
+    store.log_report_email(visit_code, message_id, user["hospital_id"])
+    _audit(user["hospital_id"], user["user_name"], "REPORT_EMAILED",
+           f"Report for visit {visit_code} e-mailed to {ctx['visit'].get('patient_code')}'s address on record.")
     return {"visitCode": visit_code, "sent": True, "recipient": _mask_email(ctx["email"])}
 
 
-@app.post("/api/visits/{visit_code}/whatsapp-link", dependencies=[Depends(require_registry_key)])
-def visit_whatsapp_link(visit_code: str):
+@app.post("/api/visits/{visit_code}/whatsapp-link")
+def visit_whatsapp_link(visit_code: str, user: dict = Depends(current_user)):
     """Build a WhatsApp click-to-chat link (notification only, no diagnosis) for the patient's number on record."""
     store = _registry()
-    ctx = store.report_context(visit_code)
+    ctx = store.report_context(visit_code, user["hospital_id"])
     if not ctx:
         raise HTTPException(status_code=404, detail="Visit not found")
     if ctx["visit"].get("status") != "signed_off":
@@ -452,18 +515,12 @@ def visit_whatsapp_link(visit_code: str):
 
     message = whatsapp.build_message(
         ctx["patient_name"] or "",
-        os.environ.get("BREVO_SENDER_NAME") or "CancerLens",
+        user["hospital_name"],
         report_emailed=bool(ctx["visit"].get("report_emails")),
     )
-    store.log_whatsapp_link(visit_code)
-    audit_logs.insert(0, AuditLogEntry(
-        id=f"EVT-{uuid.uuid4().hex[:6].upper()}",
-        timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-        actor="PATIENT_REGISTRY",
-        action="WHATSAPP_NOTIFICATION_OPENED",
-        details=f"WhatsApp notification prepared for {ctx['visit'].get('patient_code')} (visit {visit_code}).",
-        status="INFO",
-    ))
+    store.log_whatsapp_link(visit_code, user["hospital_id"])
+    _audit(user["hospital_id"], user["user_name"], "WHATSAPP_NOTIFICATION_OPENED",
+           f"WhatsApp notification prepared for {ctx['visit'].get('patient_code')} (visit {visit_code}).", "INFO")
     return {
         "visitCode": visit_code,
         "url": whatsapp.click_to_chat_url(phone, message),

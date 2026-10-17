@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { SESSION_COOKIE, SESSION_ISSUING_PATHS, SESSION_ENDING_PATH } from "@/lib/authCookie";
 
 const CANDIDATES = [
   process.env.BACKEND_API_URL,
@@ -17,6 +18,7 @@ async function forward(req: NextRequest, { params }: { params: Promise<{ path: s
   const pathStr = path.join("/");
   const urlObj = new URL(req.url);
   const search = urlObj.search;
+  const sessionToken = req.cookies.get(SESSION_COOKIE)?.value;
 
   let body: ArrayBuffer | null = null;
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -38,13 +40,17 @@ async function forward(req: NextRequest, { params }: { params: Promise<{ path: s
       const headers = new Headers();
       req.headers.forEach((val, key) => {
         const k = key.toLowerCase();
-        if (k !== "host" && k !== "content-length" && k !== "connection") {
+        // Browser cookies / auth headers are never forwarded; the session is re-attached below
+        if (!["host", "content-length", "connection", "cookie", "authorization", "x-api-key"].includes(k)) {
           headers.set(key, val);
         }
       });
-      // Server-side secret for patient-registry endpoints; never exposed to the browser
+      // Server-side secret for private endpoints; never exposed to the browser
       if (process.env.PATIENT_API_KEY) {
         headers.set("x-api-key", process.env.PATIENT_API_KEY);
+      }
+      if (sessionToken) {
+        headers.set("authorization", `Bearer ${sessionToken}`);
       }
 
       const res = await fetch(targetUrl, {
@@ -65,11 +71,30 @@ async function forward(req: NextRequest, { params }: { params: Promise<{ path: s
         }
       });
 
-      return new NextResponse(resBuffer, {
+      // Login / register: move the token from the JSON body into an httpOnly cookie
+      if (SESSION_ISSUING_PATHS.has(pathStr) && res.ok) {
+        const { token, maxAgeSeconds, ...publicBody } = JSON.parse(new TextDecoder().decode(resBuffer));
+        const out = NextResponse.json(publicBody, { status: res.status });
+        out.cookies.set(SESSION_COOKIE, token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          path: "/",
+          maxAge: maxAgeSeconds,
+        });
+        return out;
+      }
+
+      const out = new NextResponse(resBuffer, {
         status: res.status,
         statusText: res.statusText,
         headers: resHeaders,
       });
+      // Logged out, or the backend rejected the session (expired / revoked): drop the cookie
+      if (pathStr === SESSION_ENDING_PATH || (res.status === 401 && sessionToken)) {
+        out.cookies.delete(SESSION_COOKIE);
+      }
+      return out;
     } catch (err) {
       lastStatus = 503;
       lastErrorText = err instanceof Error ? err.message : String(err);

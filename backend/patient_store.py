@@ -45,7 +45,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from cryptography.fernet import Fernet, InvalidToken
-from pymongo import DESCENDING, MongoClient, ReturnDocument
+from pymongo import ASCENDING, DESCENDING, MongoClient, ReturnDocument
 from pymongo.errors import OperationFailure, PyMongoError
 
 URI_ENV_KEYS = ("MONGODB_URI", "MONGO_URI", "MONGO_DB_URI", "MONGODB_URL", "MONGO_DB")
@@ -58,8 +58,9 @@ _CODE_ALPHABET = string.ascii_uppercase.replace("O", "").replace("I", "") + "234
 PATIENTS_VALIDATOR = {
     "$jsonSchema": {
         "bsonType": "object",
-        "required": ["patient_code", "mrn_hash", "identity", "visit_count", "visits", "created_at"],
+        "required": ["hospital_id", "patient_code", "mrn_hash", "identity", "visit_count", "visits", "created_at"],
         "properties": {
+            "hospital_id": {"bsonType": "objectId", "description": "Owning hospital — every query filters on it"},
             "patient_code": {"bsonType": "string", "description": "Non-identifying folder ID (PT-XXXXXX)"},
             "mrn_hash": {"bsonType": "string", "description": "HMAC-SHA256 blind index of the MRN"},
             "identity": {
@@ -143,7 +144,11 @@ class PatientStore:
                 self.db.create_collection("patients")
             print(f"[patient_store] Schema validator not applied: {e.details.get('errmsg', e)}")
 
-        self.patients.create_index("mrn_hash", unique=True, name="uniq_mrn_hash")
+        # MRNs are unique per hospital, not globally (v1 indexed mrn_hash alone)
+        if "uniq_mrn_hash" in self.patients.index_information():
+            self.patients.drop_index("uniq_mrn_hash")
+        self.patients.create_index([("hospital_id", ASCENDING), ("mrn_hash", ASCENDING)], unique=True, name="uniq_hospital_mrn")
+        self.patients.create_index([("hospital_id", ASCENDING), ("last_visit_at", DESCENDING)], name="hospital_recent")
         self.patients.create_index("patient_code", unique=True, name="uniq_patient_code")
         self.patients.create_index([("last_visit_at", DESCENDING)], name="recent_patients")
         self.patients.create_index("visits.visit_code", unique=True, sparse=True, name="uniq_visit_code")
@@ -168,7 +173,7 @@ class PatientStore:
         return hmac.new(self._index_key, _normalize_mrn(mrn).encode(), hashlib.sha256).hexdigest()
 
     # ── Patient folders ──────────────────────────────────────────────────────
-    def register_visit(self, form: Dict[str, Any]) -> Dict[str, Any]:
+    def register_visit(self, form: Dict[str, Any], hospital_id) -> Dict[str, Any]:
         """Open (or create, for a new patient) the patient's folder and add a new visit to it."""
         now = _now()
         form = {k: v.strip() if isinstance(v, str) else v for k, v in form.items()}
@@ -176,7 +181,7 @@ class PatientStore:
 
         # 1. Create the folder if this MRN has never been seen; otherwise refresh contact details
         folder = self.patients.find_one_and_update(
-            {"mrn_hash": self.mrn_hash(form["mrn"])},
+            {"hospital_id": hospital_id, "mrn_hash": self.mrn_hash(form["mrn"])},
             {
                 "$set": {
                     "identity": identity,
@@ -222,8 +227,8 @@ class PatientStore:
             "previousVisits": previous,
         }
 
-    def lookup_by_mrn(self, mrn: str) -> Optional[Dict[str, Any]]:
-        folder = self.patients.find_one({"mrn_hash": self.mrn_hash(mrn)}, {"visits": {"$slice": 10}, "mrn_hash": 0})
+    def lookup_by_mrn(self, mrn: str, hospital_id) -> Optional[Dict[str, Any]]:
+        folder = self.patients.find_one({"hospital_id": hospital_id, "mrn_hash": self.mrn_hash(mrn)}, {"visits": {"$slice": 10}, "mrn_hash": 0})
         if not folder:
             return None
         visits = folder.get("visits", [])
@@ -259,13 +264,13 @@ class PatientStore:
         }
 
     # ── Visits inside a folder ───────────────────────────────────────────────
-    def _update_visit(self, visit_code: str, fields: Dict[str, Any]) -> bool:
+    def _update_visit(self, visit_code: str, fields: Dict[str, Any], hospital_id) -> bool:
         now = _now()
         update = {"$set": {**{f"visits.$.{k}": v for k, v in fields.items()},
                            "visits.$.updated_at": now, "updated_at": now}}
-        return self.patients.update_one({"visits.visit_code": visit_code}, update).matched_count == 1
+        return self.patients.update_one({"hospital_id": hospital_id, "visits.visit_code": visit_code}, update).matched_count == 1
 
-    def record_diagnosis(self, visit_code: str, finding: Dict[str, Any], scan: Dict[str, Any]) -> bool:
+    def record_diagnosis(self, visit_code: str, finding: Dict[str, Any], scan: Dict[str, Any], hospital_id) -> bool:
         return self._update_visit(visit_code, {
             "status": "analyzed",
             "scan": {
@@ -275,9 +280,9 @@ class PatientStore:
                 "content_type": scan.get("content_type"),
             },
             "ai_result": {**finding, "analyzed_at": _now()},
-        })
+        }, hospital_id)
 
-    def sign_off(self, visit_code: str, notes: str, signed_by: Optional[str] = None) -> bool:
+    def sign_off(self, visit_code: str, notes: str, signed_by: Optional[str], hospital_id) -> bool:
         return self._update_visit(visit_code, {
             "status": "signed_off",
             "review": {
@@ -285,12 +290,12 @@ class PatientStore:
                 "signed_by": self.encrypt(signed_by),
                 "signed_off_at": _now(),
             },
-        })
+        }, hospital_id)
 
-    def report_context(self, visit_code: str) -> Optional[Dict[str, Any]]:
+    def report_context(self, visit_code: str, hospital_id) -> Optional[Dict[str, Any]]:
         """Decrypted recipient + review data needed to e-mail a visit report (server-side only)."""
         folder = self.patients.find_one(
-            {"visits.visit_code": visit_code},
+            {"hospital_id": hospital_id, "visits.visit_code": visit_code},
             {"identity": 1, "patient_code": 1, "visits": {"$elemMatch": {"visit_code": visit_code}}},
         )
         if not folder:
@@ -307,31 +312,31 @@ class PatientStore:
             "signed_by": self.decrypt(review.get("signed_by")),
         }
 
-    def _append_to_visit(self, visit_code: str, field: str, entry: Dict[str, Any]) -> None:
+    def _append_to_visit(self, visit_code: str, field: str, entry: Dict[str, Any], hospital_id) -> None:
         # Read-modify-write instead of a positional $push so behaviour matches across MongoDB / test doubles
         folder = self.patients.find_one(
-            {"visits.visit_code": visit_code}, {"visits": {"$elemMatch": {"visit_code": visit_code}}}
+            {"hospital_id": hospital_id, "visits.visit_code": visit_code}, {"visits": {"$elemMatch": {"visit_code": visit_code}}}
         )
         if not folder:
             return
         items = folder["visits"][0].get(field, [])
         items.append(entry)
-        self._update_visit(visit_code, {field: items})
+        self._update_visit(visit_code, {field: items}, hospital_id)
 
-    def log_report_email(self, visit_code: str, message_id: str) -> None:
+    def log_report_email(self, visit_code: str, message_id: str, hospital_id) -> None:
         # The recipient address is not copied here — it already lives encrypted in the folder
         self._append_to_visit(visit_code, "report_emails",
-                              {"sent_at": _now(), "provider": "brevo", "message_id": message_id})
+                              {"sent_at": _now(), "provider": "brevo", "message_id": message_id}, hospital_id)
 
-    def log_whatsapp_link(self, visit_code: str) -> None:
+    def log_whatsapp_link(self, visit_code: str, hospital_id) -> None:
         # Click-to-chat: we can only record that staff opened the pre-filled chat, not delivery
         self._append_to_visit(visit_code, "whatsapp_notifications",
-                              {"opened_at": _now(), "channel": "wa.me click-to-chat"})
+                              {"opened_at": _now(), "channel": "wa.me click-to-chat"}, hospital_id)
 
     # ── Google Drive image archive ───────────────────────────────────────────
-    def drive_context(self, visit_code: str) -> Optional[Dict[str, Any]]:
+    def drive_context(self, visit_code: str, hospital_id) -> Optional[Dict[str, Any]]:
         folder = self.patients.find_one(
-            {"visits.visit_code": visit_code},
+            {"hospital_id": hospital_id, "visits.visit_code": visit_code},
             {"identity.full_name": 1, "patient_code": 1, "drive_folder_id": 1,
              "visits": {"$elemMatch": {"visit_code": visit_code}}},
         )
@@ -347,8 +352,8 @@ class PatientStore:
     def set_patient_drive_folder(self, patient_code: str, folder_id: str) -> None:
         self.patients.update_one({"patient_code": patient_code}, {"$set": {"drive_folder_id": folder_id}})
 
-    def set_visit_scan_drive(self, visit_code: str, info: Dict[str, Any]) -> None:
-        self._update_visit(visit_code, {"scan_drive": info})
+    def set_visit_scan_drive(self, visit_code: str, info: Dict[str, Any], hospital_id) -> None:
+        self._update_visit(visit_code, {"scan_drive": info}, hospital_id)
 
     # ── Admin ────────────────────────────────────────────────────────────────
     def erase_patient(self, patient_code: str) -> int:
@@ -383,6 +388,8 @@ def init_store() -> Optional[PatientStore]:
             store = PatientStore(uri, os.environ.get("MONGODB_DB", "cancerlens"), key)
             store.client.admin.command("ping")
             store.ensure_schema()
+            import auth  # hospital accounts live in the same database
+            auth.init_auth(store.db)
             _store, _store_error = store, None
             print(f"[patient_store] Connected to MongoDB database '{store.db.name}'")
         except (PyMongoError, ValueError) as e:

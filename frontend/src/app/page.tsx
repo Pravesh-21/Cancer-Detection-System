@@ -27,6 +27,9 @@ import {
   registerPatientVisit,
   lookupPatientByMrn,
   signOffVisit,
+  fetchCurrentSession,
+  logoutHospitalUser,
+  type HospitalSession,
 } from "@/lib/api";
 import type {
   ClinicalSessionResult,
@@ -51,6 +54,7 @@ export default function DiagnosticWorkspacePage() {
   // ── Tenant / Health ──────────────────────────────────────────────────────
   const [tenant, setTenant] = useState<TenantBranding>(DEFAULT_TENANT);
   const [healthInfo, setHealthInfo] = useState<BackendHealthInfo>({ online: false, status: "offline" });
+  const [account, setAccount] = useState<HospitalSession | null>(null);
 
   // ── Workflow Step State ──────────────────────────────────────────────────
   const [currentStep, setCurrentStep] = useState<WorkflowStep>(1);
@@ -99,7 +103,11 @@ export default function DiagnosticWorkspacePage() {
     };
 
     check();
-    fetchTenantConfig().then(setTenant);
+    // The signed-in hospital's name replaces the generic tenant branding
+    Promise.all([fetchTenantConfig(), fetchCurrentSession()]).then(([config, session]) => {
+      setAccount(session);
+      setTenant(session ? { ...config, hospitalName: session.hospital.name, facilityCode: session.hospital.code } : config);
+    });
     fetchAuditLogs().then(setAuditLogs);
 
     return () => { if (timerId) clearTimeout(timerId); };
@@ -288,7 +296,7 @@ export default function DiagnosticWorkspacePage() {
   return (
     <div className="min-h-screen flex flex-col bg-[#F3F8FB]">
       {/* ── CancerLens Clinical Header ── */}
-      <HospitalHeader tenant={tenant} healthInfo={healthInfo} />
+      <HospitalHeader tenant={tenant} healthInfo={healthInfo} account={account} onLogout={logoutHospitalUser} />
 
       {/* ── Main Workspace ── */}
       <main className="flex-1 max-w-[1780px] w-full mx-auto p-4 md:p-6 space-y-5">

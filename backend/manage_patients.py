@@ -83,11 +83,15 @@ def main():
             print(f"{pt['patient_code']}  {store.decrypt(pt['identity'].get('full_name')):<28} "
                   f"visits={pt.get('visit_count', 0):<3} last={pt.get('last_visit_at'):%Y-%m-%d}")
     elif args.cmd in ("find", "show"):
+        # The same MRN can exist at several hospitals — show every match with its hospital
         q = {"mrn_hash": store.mrn_hash(args.mrn)} if args.cmd == "find" else {"patient_code": args.patient_code}
-        pt = store.patients.find_one(q)
-        if not pt:
+        matches = list(store.patients.find(q))
+        if not matches:
             sys.exit("No matching patient.")
-        _print_patient(store, pt)
+        for pt in matches:
+            hospital = store.db["hospitals"].find_one({"_id": pt.get("hospital_id")}) or {}
+            print(f"\n[{hospital.get('hospital_code', '?')}] {hospital.get('name', 'unknown hospital')}")
+            _print_patient(store, pt)
     elif args.cmd == "erase":
         if not args.yes:
             sys.exit("Refusing to erase without --yes (this permanently deletes the patient's whole folder).")
